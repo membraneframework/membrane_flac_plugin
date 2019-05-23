@@ -1,4 +1,4 @@
-defmodule Membrane.Element.FlacParser do
+defmodule Membrane.Element.FLACParser.App do
   @moduledoc false
   use Application
 

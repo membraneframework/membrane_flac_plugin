@@ -1,4 +1,4 @@
-defmodule Membrane.Element.FlacParser.MixProject do
+defmodule Membrane.Element.FLACParser.MixProject do
   use Mix.Project
 
   @version "0.1.0"
@@ -45,8 +45,7 @@ defmodule Membrane.Element.FlacParser.MixProject do
       links: %{
         "GitHub" => @github_url,
         "Membrane Framework Homepage" => "https://membraneframework.org"
-      },
-      files: ["lib", "mix.exs", "README*", "LICENSE*", ".formatter.exs", "bundlex.exs", "c_src"]
+      }
     ]
   end
 
