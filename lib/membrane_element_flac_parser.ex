@@ -1,14 +1,12 @@
 defmodule Membrane.Element.FLACParser do
   use Membrane.Element.Base.Filter
 
-  def_output_pads output: [
-                    caps: :any
-                  ]
+  def_output_pad :output,
+    caps: :any
 
-  def_input_pads input: [
-                   caps: :any,
-                   demand_unit: :buffers
-                 ]
+  def_input_pad :input,
+    caps: :any,
+    demand_unit: :buffers
 
   @impl true
   def handle_process(_pad, _payload, _ctx, state) do

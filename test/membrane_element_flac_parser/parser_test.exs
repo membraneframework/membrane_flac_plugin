@@ -26,7 +26,11 @@ defmodule Membrane.Element.FLACParser.ParserTest do
     assert caps.md5_signature ==
              <<122, 24, 145, 1, 73, 205, 50, 241, 87, 157, 176, 17, 61, 130, 183, 13>>
 
-    assert {:ok, bufs_tail, %Parser{}} = Parser.flush(state)
+    assert {:ok, bufs_tail, %Parser{} = final_state} = Parser.flush(state)
+
+    assert final_state.pos == 71189
+    assert final_state.queue == ""
+
     parsed_file = Enum.map_join(bufs ++ bufs_tail, fn %Buffer{payload: payload} -> payload end)
     assert data == parsed_file
   end

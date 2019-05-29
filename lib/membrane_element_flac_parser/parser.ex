@@ -13,10 +13,11 @@ defmodule Membrane.Element.FLACParser.Parser do
   @opaque state() :: %__MODULE__{
             queue: binary(),
             continue: atom(),
-            pos: non_neg_integer()
+            pos: non_neg_integer(),
+            caps: %FLAC{} | nil
           }
 
-  defstruct queue: "", continue: :parse_stream, pos: 0
+  defstruct queue: "", continue: :parse_stream, pos: 0, caps: nil
 
   @doc """
   Returns an initialized parser state
@@ -39,7 +40,9 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   @spec flush(state()) :: {:ok, [Membrane.Buffer.t()], state()}
   def flush(state) do
-    parse(<<0b1111111111111000::16>>, state)
+    with {:ok, acc, state} <- parse(<<0b1111111111111000::16>>, state) do
+      {:ok, acc, %{state | queue: ""}}
+    end
   end
 
   @doc false
@@ -53,7 +56,7 @@ defmodule Membrane.Element.FLACParser.Parser do
   end
 
   def parse_stream(_, _, state) do
-    raise "Error while parsing stream at pos #{state.pos}"
+    {:error, {:not_stream, pos: state.pos}}
   end
 
   @doc false
@@ -65,10 +68,12 @@ defmodule Membrane.Element.FLACParser.Parser do
     payload = binary_part(data, 0, 4 + size)
     buf = %Buffer{payload: payload}
 
-    acc =
-      case decode_metadata_block(type, block) do
-        nil -> [buf | acc]
-        caps -> [buf | acc] ++ [caps]
+    caps = decode_metadata_block(type, block)
+
+    {acc, state} =
+      case caps do
+        nil -> {[buf | acc], state}
+        caps -> {[buf | acc] ++ [caps], %{state | caps: caps}}
       end
 
     state = %{state | pos: pos + byte_size(payload)}
@@ -124,13 +129,169 @@ defmodule Membrane.Element.FLACParser.Parser do
       match_pos ->
         frame_size = 2 + match_pos
         <<frame::binary-size(frame_size), rest::binary>> = data
-        buffer = %Buffer{payload: frame}
+        metadata = decode_frame_metadata(frame, state)
+        buffer = %Buffer{payload: frame, metadata: metadata}
         state = %{state | pos: pos + frame_size}
 
-        # <<0b111111111111100::15, _blocking_strategy::1, _samples::4, _sample_rate::4,
-        #  _channels::4, _sample_size::3, 0::1, rest::binary>> = data,
         parse_frame(rest, [buffer | acc], state)
     end
+  end
+
+  def parse_frame(data, _acc, state) do
+    {:error, {:invalid_frame, pos: state.pos, data: data}}
+  end
+
+  def decode_frame_metadata(
+        <<0b111111111111100::15, blocking_strategy::1, block_size::4, sample_rate::4, channels::4,
+          _sample_size::3, 0::1, rest::binary>>,
+        state
+      ) do
+    {number, rest} = decode_utf8_num(rest)
+    {block_size, rest} = decode_block_size(block_size, rest)
+    {sample_rate, rest} = decode_sample_rate(sample_rate, rest, state)
+
+    <<crc8::8, _rest::binary>> = rest
+
+    sample_number =
+      case blocking_strategy do
+        0 -> number * state.caps.min_block_size
+        1 -> number
+      end
+
+    %{
+      starting_sample_number: sample_number,
+      samples: block_size,
+      sample_rate: sample_rate,
+      crc8: crc8
+    }
+  end
+
+  def decode_block_size(0b0001, rest) do
+    {192, rest}
+  end
+
+  def decode_block_size(0b0110, <<block_size::8, rest::binary>>) do
+    {block_size + 1, rest}
+  end
+
+  def decode_block_size(0b0111, <<block_size::16, rest::binary>>) do
+    {block_size + 1, rest}
+  end
+
+  def decode_block_size(block_size, rest) when block_size in 0b0010..0b0101 do
+    use Bitwise
+    {576 <<< (block_size - 2), rest}
+  end
+
+  def decode_block_size(block_size, rest) when block_size in 0b1000..0b1111 do
+    use Bitwise
+    {1 <<< block_size, rest}
+  end
+
+  def decode_sample_rate(0b0000, rest, state) do
+    {state.caps.sample_rate, rest}
+  end
+
+  def decode_sample_rate(0b0001, rest, _state) do
+    {88_200, rest}
+  end
+
+  def decode_sample_rate(0b0010, rest, _state) do
+    {176_400, rest}
+  end
+
+  def decode_sample_rate(0b0011, rest, _state) do
+    {192_000, rest}
+  end
+
+  def decode_sample_rate(0b0100, rest, _state) do
+    {8000, rest}
+  end
+
+  def decode_sample_rate(0b0101, rest, _state) do
+    {16_000, rest}
+  end
+
+  def decode_sample_rate(0b0110, rest, _state) do
+    {22_050, rest}
+  end
+
+  def decode_sample_rate(0b0111, rest, _state) do
+    {24_000, rest}
+  end
+
+  def decode_sample_rate(0b1000, rest, _state) do
+    {32_000, rest}
+  end
+
+  def decode_sample_rate(0b1001, rest, _state) do
+    {44_100, rest}
+  end
+
+  def decode_sample_rate(0b1010, rest, _state) do
+    {48_000, rest}
+  end
+
+  def decode_sample_rate(0b1011, rest, _state) do
+    {96_000, rest}
+  end
+
+  def decode_sample_rate(0b1100, <<sample_rate::8, rest::binary>>, _state) do
+    {sample_rate * 1000, rest}
+  end
+
+  def decode_sample_rate(0b1101, <<sample_rate::16, rest::binary>>, _state) do
+    {sample_rate, rest}
+  end
+
+  def decode_sample_rate(0b1110, <<sample_rate::16, rest::binary>>, _state) do
+    {sample_rate * 10, rest}
+  end
+
+  @spec decode_utf8_num(binary()) :: {non_neg_integer(), binary()}
+  def decode_utf8_num(<<0::1, num::7, rest::binary>>) do
+    {num, rest}
+  end
+
+  def decode_utf8_num(<<0b110::3, a::5, 0b10::2, b::6, rest::binary>>) do
+    <<num::11>> = <<a::5, b::6>>
+    {num, rest}
+  end
+
+  def decode_utf8_num(<<0b1110::4, a::4, 0b10::2, b::6, 0b10::2, c::6, rest::binary>>) do
+    <<num::16>> = <<a::4, b::6, c::6>>
+    {num, rest}
+  end
+
+  def decode_utf8_num(
+        <<0b11110::5, a::3, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, rest::binary>>
+      ) do
+    <<num::21>> = <<a::3, b::6, c::6, d::6>>
+    {num, rest}
+  end
+
+  def decode_utf8_num(
+        <<0b111110::6, a::2, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6,
+          rest::binary>>
+      ) do
+    <<num::26>> = <<a::2, b::6, c::6, d::6, e::6>>
+    {num, rest}
+  end
+
+  def decode_utf8_num(
+        <<0b1111110::7, a::1, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6, 0b10::2,
+          f::6, rest::binary>>
+      ) do
+    <<num::31>> = <<a::1, b::6, c::6, d::6, e::6, f::6>>
+    {num, rest}
+  end
+
+  def decode_utf8_num(
+        <<0b11111110::8, 0b10::2, a::6, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2,
+          e::6, 0b10::2, f::6, rest::binary>>
+      ) do
+    <<num::36>> = <<a::6, b::6, c::6, d::6, e::6, f::6>>
+    {num, rest}
   end
 
   @spec find_frame_start(binary()) :: :nomatch | non_neg_integer()
