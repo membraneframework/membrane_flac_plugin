@@ -5,19 +5,36 @@ defmodule Membrane.Element.FLACParser.Parser do
   alias Membrane.{Buffer, Caps}
   alias Membrane.Caps.Audio.FLAC
 
-  @frame_header_pattern [
-    <<0b1111111111111000::16>>,
-    <<0b1111111111111001::16>>
-  ]
+  @blocking_stg_fixed 0
+  @blocking_stg_variable 1
+
+  @fixed_frame_start <<0b1111111111111000::16>>
+  @variable_frame_start <<0b1111111111111001::16>>
 
   @opaque state() :: %__MODULE__{
             queue: binary(),
             continue: atom(),
             pos: non_neg_integer(),
-            caps: %FLAC{} | nil
+            caps: %FLAC{} | nil,
+            blocking_strategy: 0 | 1 | nil,
+            current_metadata: metadata() | nil
           }
 
-  defstruct queue: "", continue: :parse_stream, pos: 0, caps: nil
+  defstruct queue: "",
+            continue: :parse_stream,
+            pos: 0,
+            caps: nil,
+            blocking_strategy: nil,
+            current_metadata: nil
+
+  @type metadata() :: %{
+          channels: 1..8,
+          crc8: byte,
+          sample_rate: pos_integer,
+          sample_size: 4 | 8 | 12 | 16 | 20 | 24 | 32,
+          samples: pos_integer,
+          starting_sample_number: non_neg_integer()
+        }
 
   @doc """
   Returns an initialized parser state
@@ -38,11 +55,10 @@ defmodule Membrane.Element.FLACParser.Parser do
     end
   end
 
-  @spec flush(state()) :: {:ok, [Membrane.Buffer.t()], state()}
-  def flush(state) do
-    with {:ok, acc, state} <- parse(<<0b1111111111111000::16>>, state) do
-      {:ok, acc, %{state | queue: ""}}
-    end
+  @spec flush(state()) :: {:ok, Membrane.Buffer.t()}
+  def flush(%{current_metadata: metadata, queue: queue}) do
+    buf = %Buffer{payload: queue, metadata: metadata}
+    {:ok, buf}
   end
 
   @doc false
@@ -117,187 +133,384 @@ defmodule Membrane.Element.FLACParser.Parser do
     {:ok, acc, %{state | queue: data, continue: :parse_frame}}
   end
 
+  def parse_frame(data, acc, %{caps: %{min_frame_size: min_frame_size}} = state)
+      when min_frame_size != nil and byte_size(data) < min_frame_size do
+    {:ok, acc, %{state | queue: data, continue: :parse_frame}}
+  end
+
+  # no frame parsed yet
   def parse_frame(
-        <<0b111111111111100::15, _blocking_strategy::1, rest::binary>> = data,
+        <<0b111111111111100::15, blocking_strategy::1, _::binary>> = data,
         acc,
-        %{pos: pos} = state
+        %{blocking_strategy: nil} = state
       ) do
-    case find_frame_start(rest) do
-      :nomatch ->
+    state = %{state | blocking_strategy: blocking_strategy}
+
+    parse_frame(data, acc, state)
+  end
+
+  # no full header parsed yet
+  def parse_frame(
+        <<0b111111111111100::15, blocking_strategy::1, _::binary>> = data,
+        acc,
+        %{blocking_strategy: blocking_strategy, current_metadata: nil} = state
+      ) do
+    case parse_frame_header(data, state) do
+      :nodata ->
         {:ok, acc, %{state | queue: data, continue: :parse_frame}}
 
-      match_pos ->
-        frame_size = 2 + match_pos
-        <<frame::binary-size(frame_size), rest::binary>> = data
-        metadata = decode_frame_metadata(frame, state)
-        buffer = %Buffer{payload: frame, metadata: metadata}
-        state = %{state | pos: pos + frame_size}
+      {:error, _reason} = e ->
+        e
 
-        parse_frame(rest, [buffer | acc], state)
+      {:ok, metadata} ->
+        parse_frame(data, acc, %{state | current_metadata: metadata})
     end
   end
 
-  def parse_frame(data, _acc, state) do
-    {:error, {:invalid_frame, pos: state.pos, data: data}}
-  end
-
-  def decode_frame_metadata(
-        <<0b111111111111100::15, blocking_strategy::1, block_size::4, sample_rate::4, channels::4,
-          _sample_size::3, 0::1, rest::binary>>,
-        state
+  def parse_frame(
+        <<0b111111111111100::15, blocking_strategy::1, _::binary>> = data,
+        acc,
+        %{blocking_strategy: blocking_strategy, current_metadata: current_metadata, pos: pos} =
+          state
       ) do
-    {number, rest} = decode_utf8_num(rest)
-    {block_size, rest} = decode_block_size(block_size, rest)
-    {sample_rate, rest} = decode_sample_rate(sample_rate, rest, state)
+    # TODO: include pos
+    search_start = max(2, state.caps.min_frame_size || 0)
 
-    <<crc8::8, _rest::binary>> = rest
-
-    sample_number =
-      case blocking_strategy do
-        0 -> number * state.caps.min_block_size
-        1 -> number
+    search_end =
+      case state.caps.max_frame_size do
+        nil -> byte_size(data)
+        max_frame_size -> min(byte_size(data), max_frame_size + 2)
       end
 
-    %{
-      starting_sample_number: sample_number,
-      samples: block_size,
-      sample_rate: sample_rate,
-      crc8: crc8
-    }
+    search_scope = {search_start, search_end - search_start}
+
+    matches =
+      case blocking_strategy do
+        @blocking_stg_fixed ->
+          :binary.matches(data, @fixed_frame_start, scope: search_scope)
+
+        @blocking_stg_variable ->
+          :binary.matches(data, @variable_frame_start, scope: search_scope)
+      end
+
+    next_frame_search =
+      matches
+      |> Enum.find_value(:nomatch, fn {pos, _len} ->
+        <<frame::binary-size(pos), next_frame_candidate::binary>> = data
+
+        case parse_frame_header(next_frame_candidate, state) do
+          :nodata ->
+            :nodata
+
+          {:error, _reason} ->
+            false
+
+          {:ok, metadata} ->
+            if is_metadata_valid(metadata, state) do
+              {frame, next_frame_candidate, metadata}
+            else
+              false
+            end
+        end
+      end)
+
+    case next_frame_search do
+      :nomatch when search_end < byte_size(data) ->
+        IO.inspect(state)
+        {:error, {:invalid_frame, pos: state.pos}, acc}
+
+      :nomatch ->
+        {:ok, acc, %{state | queue: data, continue: :parse_frame}}
+
+      :nodata ->
+        {:ok, acc, %{state | queue: data, continue: :parse_frame}}
+
+      {frame, rest, next_metadata} ->
+        buf = %Buffer{payload: frame, metadata: current_metadata}
+
+        parse_frame(rest, [buf | acc], %{
+          state
+          | pos: pos + byte_size(frame),
+            queue: "",
+            continue: :parse_frame,
+            current_metadata: next_metadata
+        })
+    end
   end
 
-  def decode_block_size(0b0001, rest) do
-    {192, rest}
+  def parse_frame(_data, acc, state) do
+    {:error, {:invalid_frame, pos: state.pos}, acc}
   end
 
-  def decode_block_size(0b0110, <<block_size::8, rest::binary>>) do
-    {block_size + 1, rest}
+  @spec parse_frame_header(binary(), state()) ::
+          :nodata
+          | {:error, {:invalid_header, pos: pos_integer()}}
+          | {:ok, metadata()}
+  defp parse_frame_header(
+         <<0b111111111111100::15, blocking_strategy::1, block_size::4, sample_rate::4,
+           channels::4, sample_size::3, 0::1, rest::binary>> = data,
+         %{blocking_strategy: blocking_strategy} = state
+       )
+       when block_size != 0 and sample_rate != 0b1111 and channels not in 0b1011..0b1111 and
+              sample_size not in [0b011, 0b111] do
+    with {:ok, number, consumed_utf8, rest} <- decode_utf8_num(rest),
+         {:ok, block_size, consumed_bs, rest} <- decode_block_size(block_size, rest),
+         {:ok, sample_rate, consumed_sr, rest} <- decode_sample_rate(sample_rate, rest, state),
+         <<crc8::8, _rest::binary>> <- if(byte_size(rest) < 1, do: :nodata, else: rest),
+         header_size = 4 + consumed_utf8 + consumed_bs + consumed_sr,
+         <<header::binary-size(header_size), _::binary>> = data,
+         :ok <- verify_crc(header, crc8) do
+      sample_number =
+        case blocking_strategy do
+          0 -> number * state.caps.min_block_size
+          1 -> number
+        end
+
+      sample_size =
+        case sample_size do
+          0b000 -> state.caps.sample_size
+          0b001 -> 8
+          0b010 -> 12
+          0b100 -> 16
+          0b101 -> 20
+          0b110 -> 24
+        end
+
+      channels =
+        if channels in 0b1000..0b1010 do
+          2
+        else
+          channels + 1
+        end
+
+      {:ok,
+       %{
+         channels: channels,
+         starting_sample_number: sample_number,
+         samples: block_size,
+         sample_rate: sample_rate,
+         sample_size: sample_size,
+         crc8: crc8
+       }}
+    end
   end
 
-  def decode_block_size(0b0111, <<block_size::16, rest::binary>>) do
-    {block_size + 1, rest}
+  defp parse_frame_header(_data, state) do
+    {:error, {:invalid_header, pos: state.pos}}
   end
 
-  def decode_block_size(block_size, rest) when block_size in 0b0010..0b0101 do
+  defp is_metadata_valid(metadata, %{caps: caps, current_metadata: last_meta}) do
+    metadata.starting_sample_number == last_meta.starting_sample_number + last_meta.samples and
+      metadata.channels == caps.channels and
+      metadata.sample_rate == caps.sample_rate and
+      metadata.sample_size == caps.sample_size and
+      (caps.max_block_size == nil or metadata.samples <= caps.max_block_size)
+
+    # cannot test for min_block_size because last frame in fixed blocking strategy
+    # is smaller than rest
+  end
+
+  @spec decode_block_size(byte(), binary()) ::
+          :nodata
+          | {:ok, pos_integer(), non_neg_integer(), binary()}
+          | {:error, :invalid_block_size}
+  defp decode_block_size(0b0000, _rest) do
+    {:error, :invalid_block_size}
+  end
+
+  defp decode_block_size(0b0001, rest) do
+    {:ok, 192, 0, rest}
+  end
+
+  defp decode_block_size(0b0110, rest) when byte_size(rest) < 1 do
+    :nodata
+  end
+
+  defp decode_block_size(0b0110, <<block_size::8, rest::binary>>) do
+    {:ok, block_size + 1, 1, rest}
+  end
+
+  defp decode_block_size(0b0111, rest) when byte_size(rest) < 2 do
+    :nodata
+  end
+
+  defp decode_block_size(0b0111, <<block_size::16, rest::binary>>) do
+    {:ok, block_size + 1, 2, rest}
+  end
+
+  defp decode_block_size(block_size, rest) when block_size in 0b0010..0b0101 do
     use Bitwise
-    {576 <<< (block_size - 2), rest}
+    {:ok, 576 <<< (block_size - 2), 0, rest}
   end
 
-  def decode_block_size(block_size, rest) when block_size in 0b1000..0b1111 do
+  defp decode_block_size(block_size, rest) when block_size in 0b1000..0b1111 do
     use Bitwise
-    {1 <<< block_size, rest}
+    {:ok, 1 <<< block_size, 0, rest}
   end
 
-  def decode_sample_rate(0b0000, rest, state) do
-    {state.caps.sample_rate, rest}
+  @spec decode_sample_rate(byte, binary(), state()) ::
+          {:ok, sample_rate :: non_neg_integer(), consumed :: non_neg_integer(), rest :: binary()}
+          | {:error, :invalid_sample_rate}
+          | :nodata
+  defp decode_sample_rate(0b0000, rest, state) do
+    {:ok, state.caps.sample_rate, 0, rest}
   end
 
-  def decode_sample_rate(0b0001, rest, _state) do
-    {88_200, rest}
+  defp decode_sample_rate(0b0001, rest, _state) do
+    {:ok, 88_200, 0, rest}
   end
 
-  def decode_sample_rate(0b0010, rest, _state) do
-    {176_400, rest}
+  defp decode_sample_rate(0b0010, rest, _state) do
+    {:ok, 176_400, 0, rest}
   end
 
-  def decode_sample_rate(0b0011, rest, _state) do
-    {192_000, rest}
+  defp decode_sample_rate(0b0011, rest, _state) do
+    {:ok, 192_000, 0, rest}
   end
 
-  def decode_sample_rate(0b0100, rest, _state) do
-    {8000, rest}
+  defp decode_sample_rate(0b0100, rest, _state) do
+    {:ok, 8000, 0, rest}
   end
 
-  def decode_sample_rate(0b0101, rest, _state) do
-    {16_000, rest}
+  defp decode_sample_rate(0b0101, rest, _state) do
+    {:ok, 16_000, 0, rest}
   end
 
-  def decode_sample_rate(0b0110, rest, _state) do
-    {22_050, rest}
+  defp decode_sample_rate(0b0110, rest, _state) do
+    {:ok, 22_050, 0, rest}
   end
 
-  def decode_sample_rate(0b0111, rest, _state) do
-    {24_000, rest}
+  defp decode_sample_rate(0b0111, rest, _state) do
+    {:ok, 24_000, 0, rest}
   end
 
-  def decode_sample_rate(0b1000, rest, _state) do
-    {32_000, rest}
+  defp decode_sample_rate(0b1000, rest, _state) do
+    {:ok, 32_000, 0, rest}
   end
 
-  def decode_sample_rate(0b1001, rest, _state) do
-    {44_100, rest}
+  defp decode_sample_rate(0b1001, rest, _state) do
+    {:ok, 44_100, 0, rest}
   end
 
-  def decode_sample_rate(0b1010, rest, _state) do
-    {48_000, rest}
+  defp decode_sample_rate(0b1010, rest, _state) do
+    {:ok, 48_000, 0, rest}
   end
 
-  def decode_sample_rate(0b1011, rest, _state) do
-    {96_000, rest}
+  defp decode_sample_rate(0b1011, rest, _state) do
+    {:ok, 96_000, 0, rest}
   end
 
-  def decode_sample_rate(0b1100, <<sample_rate::8, rest::binary>>, _state) do
-    {sample_rate * 1000, rest}
+  defp decode_sample_rate(0b1100, rest, _state) when byte_size(rest) < 1 do
+    :nodata
   end
 
-  def decode_sample_rate(0b1101, <<sample_rate::16, rest::binary>>, _state) do
-    {sample_rate, rest}
+  defp decode_sample_rate(0b1100, <<sample_rate::8, rest::binary>>, _state) do
+    {:ok, sample_rate * 1000, 1, rest}
   end
 
-  def decode_sample_rate(0b1110, <<sample_rate::16, rest::binary>>, _state) do
-    {sample_rate * 10, rest}
+  defp decode_sample_rate(raw_sample_rate, rest, _state)
+       when raw_sample_rate in [0b1101, 0b1110] and byte_size(rest) < 2 do
+    :nodata
   end
 
-  @spec decode_utf8_num(binary()) :: {non_neg_integer(), binary()}
-  def decode_utf8_num(<<0::1, num::7, rest::binary>>) do
-    {num, rest}
+  defp decode_sample_rate(0b1101, <<sample_rate::16, rest::binary>>, _state) do
+    {:ok, sample_rate, 2, rest}
   end
 
-  def decode_utf8_num(<<0b110::3, a::5, 0b10::2, b::6, rest::binary>>) do
+  defp decode_sample_rate(0b1110, <<sample_rate::16, rest::binary>>, _state) do
+    {:ok, sample_rate * 10, 2, rest}
+  end
+
+  defp decode_sample_rate(0b1111, _rest, _state) do
+    {:error, :invalid_sample_rate}
+  end
+
+  @spec decode_utf8_num(binary()) ::
+          {:ok, decoded_num :: non_neg_integer(), consumed :: non_neg_integer(), rest :: binary()}
+          | {:error, :invalid_utf8_num}
+          | :nodata
+  defp decode_utf8_num(data) when byte_size(data) < 1 do
+    :nodata
+  end
+
+  defp decode_utf8_num(<<0::1, num::7, rest::binary>>) do
+    {:ok, num, 1, rest}
+  end
+
+  defp decode_utf8_num(<<0b110::3, _::bitstring>> = data) when byte_size(data) < 2 do
+    :nodata
+  end
+
+  defp decode_utf8_num(<<0b110::3, a::5, 0b10::2, b::6, rest::binary>>) do
     <<num::11>> = <<a::5, b::6>>
-    {num, rest}
+    {:ok, num, 2, rest}
   end
 
-  def decode_utf8_num(<<0b1110::4, a::4, 0b10::2, b::6, 0b10::2, c::6, rest::binary>>) do
+  defp decode_utf8_num(<<0b1110::4, _::bitstring>> = data) when byte_size(data) < 3 do
+    :nodata
+  end
+
+  defp decode_utf8_num(<<0b1110::4, a::4, 0b10::2, b::6, 0b10::2, c::6, rest::binary>>) do
     <<num::16>> = <<a::4, b::6, c::6>>
-    {num, rest}
+    {:ok, num, 3, rest}
   end
 
-  def decode_utf8_num(
-        <<0b11110::5, a::3, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, rest::binary>>
-      ) do
+  defp decode_utf8_num(<<0b11110::5, _::bitstring>> = data) when byte_size(data) < 4 do
+    :nodata
+  end
+
+  defp decode_utf8_num(
+         <<0b11110::5, a::3, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, rest::binary>>
+       ) do
     <<num::21>> = <<a::3, b::6, c::6, d::6>>
-    {num, rest}
+    {:ok, num, 4, rest}
   end
 
-  def decode_utf8_num(
-        <<0b111110::6, a::2, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6,
-          rest::binary>>
-      ) do
+  defp decode_utf8_num(<<0b111110::6, _::bitstring>> = data) when byte_size(data) < 5 do
+    :nodata
+  end
+
+  defp decode_utf8_num(
+         <<0b111110::6, a::2, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6,
+           rest::binary>>
+       ) do
     <<num::26>> = <<a::2, b::6, c::6, d::6, e::6>>
-    {num, rest}
+    {:ok, num, 5, rest}
   end
 
-  def decode_utf8_num(
-        <<0b1111110::7, a::1, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6, 0b10::2,
-          f::6, rest::binary>>
-      ) do
+  defp decode_utf8_num(<<0b1111110::7, _::bitstring>> = data) when byte_size(data) < 6 do
+    :nodata
+  end
+
+  defp decode_utf8_num(
+         <<0b1111110::7, a::1, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6,
+           0b10::2, f::6, rest::binary>>
+       ) do
     <<num::31>> = <<a::1, b::6, c::6, d::6, e::6, f::6>>
-    {num, rest}
+    {:ok, num, 6, rest}
   end
 
-  def decode_utf8_num(
-        <<0b11111110::8, 0b10::2, a::6, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2,
-          e::6, 0b10::2, f::6, rest::binary>>
-      ) do
+  defp decode_utf8_num(<<0b11111110::8, _::bitstring>> = data) when byte_size(data) < 7 do
+    :nodata
+  end
+
+  defp decode_utf8_num(
+         <<0b11111110::8, 0b10::2, a::6, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2,
+           e::6, 0b10::2, f::6, rest::binary>>
+       ) do
     <<num::36>> = <<a::6, b::6, c::6, d::6, e::6, f::6>>
-    {num, rest}
+    {:ok, num, 7, rest}
   end
 
-  @spec find_frame_start(binary()) :: :nomatch | non_neg_integer()
-  defp find_frame_start(data) do
-    with {pos, _len} <- :binary.match(data, @frame_header_pattern) do
-      pos
+  defp decode_utf8_num(_) do
+    {:error, :invalid_utf8_num}
+  end
+
+  defp verify_crc(header, crc8) do
+    if CRC.calculate(header, :crc_8) == crc8 do
+      :ok
+    else
+      {:error, :invalid_header_crc}
     end
   end
 end

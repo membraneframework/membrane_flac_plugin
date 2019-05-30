@@ -26,12 +26,22 @@ defmodule Membrane.Element.FLACParser.ParserTest do
     assert caps.md5_signature ==
              <<122, 24, 145, 1, 73, 205, 50, 241, 87, 157, 176, 17, 61, 130, 183, 13>>
 
-    assert {:ok, bufs_tail, %Parser{} = final_state} = Parser.flush(state)
+    frames = bufs |> Enum.drop(4)
+    assert frames |> length() == 27
 
-    assert final_state.pos == 71189
-    assert final_state.queue == ""
+    frames
+    |> Enum.each(fn %Buffer{metadata: meta} ->
+      assert meta.samples == 1152
+      assert meta.sample_rate == 16_000
+      assert meta.channels == 1
+      assert meta.sample_size == 16
+    end)
 
-    parsed_file = Enum.map_join(bufs ++ bufs_tail, fn %Buffer{payload: payload} -> payload end)
+    assert {:ok, last_buf} = Parser.flush(state)
+
+    assert state.pos + byte_size(last_buf.payload) == 71189
+
+    parsed_file = Enum.map_join(bufs ++ [last_buf], fn %Buffer{payload: payload} -> payload end)
     assert data == parsed_file
   end
 end
