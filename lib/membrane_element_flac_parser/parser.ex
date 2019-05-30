@@ -1,6 +1,15 @@
 defmodule Membrane.Element.FLACParser.Parser do
   @moduledoc """
   Stateful parser based on FLAC format specification available [here](https://xiph.org/flac/format.html#stream)
+
+  The parser outputs:
+  1. `Membrane.Caps.Audio.FLAC`
+  2. `Membrane.Buffer` with "fLaC" - the FLAC stream marker in ASCII
+  3. At least one `Membrane.Buffer` with metadata block(s)
+  4. `Membrane.Buffer`s containing one frame each, with decoded metadata from its header
+
+  The parsing is done by calling `init/0` and than `parse/2` with the data to parse.
+  The last buffer can be obtained by calling `flush/1`
   """
   alias Membrane.{Buffer, Caps}
   alias Membrane.Caps.Audio.FLAC
@@ -11,6 +20,9 @@ defmodule Membrane.Element.FLACParser.Parser do
   @fixed_frame_start <<0b1111111111111000::16>>
   @variable_frame_start <<0b1111111111111001::16>>
 
+  @typedoc """
+  Opaque struct containing state of the parser.
+  """
   @opaque state() :: %__MODULE__{
             queue: binary(),
             continue: atom(),
@@ -44,8 +56,15 @@ defmodule Membrane.Element.FLACParser.Parser do
     %__MODULE__{}
   end
 
+  @doc """
+  Parses FLAC stream, splitting it into `Membrane.Buffer`s and providing caps.
+
+  See moduledoc (`#{inspect(__MODULE__)}`) for more info
+
+  The call without `state` provided is an equivalent of using `init/0` as `state`
+  """
   @spec parse(binary(), state()) :: {:ok, [Caps.t() | Buffer.t()], state()}
-  def parse(binary_data, state \\ %__MODULE__{})
+  def parse(binary_data, state \\ init())
 
   def parse(binary_data, %{queue: queue, continue: continue} = state) do
     res = apply(__MODULE__, continue, [queue <> binary_data, [], %{state | queue: ""}])
@@ -55,6 +74,10 @@ defmodule Membrane.Element.FLACParser.Parser do
     end
   end
 
+  @doc """
+  Outputs the last buffer queued in parser. Should be called afer providing
+  all data to the parser.
+  """
   @spec flush(state()) :: {:ok, Membrane.Buffer.t()}
   def flush(%{current_metadata: metadata, queue: queue}) do
     buf = %Buffer{payload: queue, metadata: metadata}
