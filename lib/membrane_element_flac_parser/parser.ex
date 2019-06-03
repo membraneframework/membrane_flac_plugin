@@ -29,7 +29,7 @@ defmodule Membrane.Element.FLACParser.Parser do
             pos: non_neg_integer(),
             caps: %FLAC{} | nil,
             blocking_strategy: 0 | 1 | nil,
-            current_metadata: metadata() | nil
+            current_metadata: FLAC.Metadata.t() | nil
           }
 
   defstruct queue: "",
@@ -38,15 +38,6 @@ defmodule Membrane.Element.FLACParser.Parser do
             caps: nil,
             blocking_strategy: nil,
             current_metadata: nil
-
-  @type metadata() :: %{
-          channels: 1..8,
-          crc8: byte,
-          sample_rate: pos_integer,
-          sample_size: 4 | 8 | 12 | 16 | 20 | 24 | 32,
-          samples: pos_integer,
-          starting_sample_number: non_neg_integer()
-        }
 
   @doc """
   Returns an initialized parser state
@@ -267,8 +258,14 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   @spec parse_frame_header(binary(), state()) ::
           :nodata
-          | {:error, {:invalid_header, pos: pos_integer()}}
-          | {:ok, metadata()}
+          | {:ok, FLAC.Metadata.t()}
+          | {:error, reason}
+        when reason:
+               :invalid_block_size
+               | :invalid_header_crc
+               | :invalid_sample_rate
+               | :invalid_utf8_num
+               | {:invalid_header, any()}
   defp parse_frame_header(
          <<0b111111111111100::15, blocking_strategy::1, block_size::4, sample_rate::4,
            channels::4, sample_size::3, 0::1, rest::binary>> = data,
@@ -299,21 +296,22 @@ defmodule Membrane.Element.FLACParser.Parser do
           0b110 -> 24
         end
 
-      channels =
-        if channels in 0b1000..0b1010 do
-          2
-        else
-          channels + 1
+      {channels, channel_mode} =
+        case channels do
+          0b1000 -> {2, :left_side}
+          0b1001 -> {2, :right_side}
+          0b1010 -> {2, :mid_side}
+          _ -> {channels + 1, :independent}
         end
 
       {:ok,
-       %{
+       %FLAC.Metadata{
          channels: channels,
+         channel_mode: channel_mode,
          starting_sample_number: sample_number,
          samples: block_size,
          sample_rate: sample_rate,
-         sample_size: sample_size,
-         crc8: crc8
+         sample_size: sample_size
        }}
     end
   end
