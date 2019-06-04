@@ -12,6 +12,29 @@ defmodule Membrane.Element.FLACParser.ParserTest do
     data = File.read!(fixture("noise.flac"))
     assert %Parser{} = Parser.init()
     assert {:ok, caps_n_bufs, %Parser{} = state} = Parser.parse(data)
+
+    verify_noise_flac_results(caps_n_bufs, state, data)
+  end
+
+  @tag :focus
+  test "parse chunked noise.flac" do
+    chunks = File.stream!(fixture("noise.flac"), [], 24) |> Enum.to_list()
+    data = File.read!(fixture("noise.flac"))
+
+    {caps_n_bufs, state} =
+      chunks
+      |> Enum.flat_map_reduce(Parser.init(), fn chunk, state ->
+        assert {:ok, caps_n_bufs, %Parser{} = state} = Parser.parse(chunk, state)
+        require IEx
+        IEx.pry()
+
+        {caps_n_bufs, state}
+      end)
+
+    verify_noise_flac_results(caps_n_bufs, state, data)
+  end
+
+  defp verify_noise_flac_results(caps_n_bufs, state, reference_data) do
     assert [%FLAC{} = caps | bufs] = caps_n_bufs
 
     assert caps.sample_rate == 16_000
@@ -42,6 +65,6 @@ defmodule Membrane.Element.FLACParser.ParserTest do
     assert state.pos + byte_size(last_buf.payload) == 71189
 
     parsed_file = Enum.map_join(bufs ++ [last_buf], fn %Buffer{payload: payload} -> payload end)
-    assert data == parsed_file
+    assert reference_data == parsed_file
   end
 end
