@@ -66,7 +66,14 @@ defmodule Membrane.Element.FLACParser do
   @impl true
   def handle_event(:input, %EndOfStream{}, _ctx, state) do
     {:ok, buffer} = Parser.flush(state.parser)
-    {{:ok, buffer: {:output, buffer}}, state}
+
+    actions = [
+      buffer: {:output, buffer},
+      event: {:output, %EndOfStream{}},
+      notify: {:end_of_stream, :input}
+    ]
+
+    {{:ok, actions}, state}
   end
 
   def handle_event(pad, event, ctx, state) do
