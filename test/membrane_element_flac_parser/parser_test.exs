@@ -16,18 +16,14 @@ defmodule Membrane.Element.FLACParser.ParserTest do
     verify_noise_flac_results(caps_n_bufs, state, data)
   end
 
-  @tag :focus
   test "parse chunked noise.flac" do
-    chunks = File.stream!(fixture("noise.flac"), [], 24) |> Enum.to_list()
+    chunks = File.stream!(fixture("noise.flac"), [], 1) |> Enum.to_list()
     data = File.read!(fixture("noise.flac"))
 
     {caps_n_bufs, state} =
       chunks
       |> Enum.flat_map_reduce(Parser.init(), fn chunk, state ->
         assert {:ok, caps_n_bufs, %Parser{} = state} = Parser.parse(chunk, state)
-        require IEx
-        IEx.pry()
-
         {caps_n_bufs, state}
       end)
 

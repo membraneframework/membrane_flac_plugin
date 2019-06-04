@@ -76,7 +76,8 @@ defmodule Membrane.Element.FLACParser.Parser do
   end
 
   @doc false
-  def parse_stream(binary_data, acc, state) when byte_size(binary_data) < 4 do
+  # Don't start parsing until we have at least streaminfo header
+  def parse_stream(binary_data, acc, state) when byte_size(binary_data) < 42 do
     {:ok, acc, %{state | queue: binary_data, continue: :parse_stream}}
   end
 
@@ -229,11 +230,13 @@ defmodule Membrane.Element.FLACParser.Parser do
       end)
 
     case next_frame_search do
-      :nomatch when search_end < byte_size(data) ->
-        IO.inspect(state)
+      :nomatch when search_end + 2 < byte_size(data) ->
+        # At this point next frame start should've been found
+        # because `search_end` was set to max_frame_size + 2
         {:error, {:invalid_frame, pos: state.pos}, acc}
 
       :nomatch ->
+        # `search_end` was limited by the size of data
         {:ok, acc, %{state | queue: data, continue: :parse_frame}}
 
       :nodata ->
