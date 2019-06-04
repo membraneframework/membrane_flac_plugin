@@ -29,7 +29,7 @@ defmodule Membrane.Element.FLACParser.Parser do
             pos: non_neg_integer(),
             caps: %FLAC{} | nil,
             blocking_strategy: 0 | 1 | nil,
-            current_metadata: FLAC.Metadata.t() | nil
+            current_metadata: FLAC.FrameMetadata.t() | nil
           }
 
   defstruct queue: "",
@@ -261,7 +261,7 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   @spec parse_frame_header(binary(), state()) ::
           :nodata
-          | {:ok, FLAC.Metadata.t()}
+          | {:ok, FLAC.FrameMetadata.t()}
           | {:error, reason}
         when reason:
                :invalid_block_size
@@ -308,7 +308,7 @@ defmodule Membrane.Element.FLACParser.Parser do
         end
 
       {:ok,
-       %FLAC.Metadata{
+       %FLAC.FrameMetadata{
          channels: channels,
          channel_mode: channel_mode,
          starting_sample_number: sample_number,
