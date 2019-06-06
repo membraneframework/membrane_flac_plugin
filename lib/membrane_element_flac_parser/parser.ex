@@ -35,7 +35,7 @@ defmodule Membrane.Element.FLACParser.Parser do
           }
 
   defstruct queue: "",
-            continue: :parse_stream,
+            continue: :stream,
             pos: 0,
             caps: nil,
             blocking_strategy: nil,
@@ -60,7 +60,7 @@ defmodule Membrane.Element.FLACParser.Parser do
   def parse(binary_data, state \\ init())
 
   def parse(binary_data, %{queue: queue, continue: continue} = state) do
-    res = apply(__MODULE__, continue, [queue <> binary_data, [], %{state | queue: ""}])
+    res = do_parse(continue, queue <> binary_data, [], %{state | queue: ""})
 
     with {:ok, acc, state} <- res do
       {:ok, acc |> Enum.reverse(), state}
@@ -77,27 +77,28 @@ defmodule Membrane.Element.FLACParser.Parser do
     {:ok, buf}
   end
 
-  @doc false
+  # STREAM parsing
   # Don't start parsing until we have at least streaminfo header
-  def parse_stream(binary_data, acc, state) when byte_size(binary_data) < 42 do
-    {:ok, acc, %{state | queue: binary_data, continue: :parse_stream}}
+  defp do_parse(:stream, binary_data, acc, state) when byte_size(binary_data) < 42 do
+    {:ok, acc, %{state | queue: binary_data, continue: :stream}}
   end
 
-  def parse_stream("fLaC" <> tail, acc, state) do
+  defp do_parse(:stream, "fLaC" <> tail, acc, state) do
     buf = %Buffer{payload: "fLaC"}
-    parse_metadata_block(tail, [buf | acc], %{state | pos: 4})
+    do_parse(:metadata_block, tail, [buf | acc], %{state | pos: 4})
   end
 
-  def parse_stream(_, _, state) do
+  defp do_parse(:stream, _, _, state) do
     {:error, {:not_stream, pos: state.pos}}
   end
 
-  @doc false
-  def parse_metadata_block(
-        <<is_last::1, type::7, size::24, block::binary-size(size), rest::binary>> = data,
-        acc,
-        %{pos: pos} = state
-      ) do
+  # METADATA_BLOCK parsing
+  defp do_parse(
+         :metadata_block,
+         <<is_last::1, type::7, size::24, block::binary-size(size), rest::binary>> = data,
+         acc,
+         %{pos: pos} = state
+       ) do
     payload = binary_part(data, 0, 4 + size)
     buf = %Buffer{payload: payload}
 
@@ -112,86 +113,67 @@ defmodule Membrane.Element.FLACParser.Parser do
     state = %{state | pos: pos + byte_size(payload)}
 
     if is_last == 1 do
-      parse_frame(rest, acc, state)
+      do_parse(:frame, rest, acc, state)
     else
-      parse_metadata_block(rest, acc, state)
+      do_parse(:metadata_block, rest, acc, state)
     end
   end
 
-  def parse_metadata_block(data, acc, state) do
-    {:ok, acc, %{state | queue: data, continue: :parse_metadata_block}}
+  defp do_parse(:metadata_block, data, acc, state) do
+    {:ok, acc, %{state | queue: data, continue: :metadata_block}}
   end
 
-  # STREAMDATA
-  defp decode_metadata_block(
-         0,
-         <<min_block_size::16, max_block_size::16, min_frame_size::24, max_frame_size::24,
-           sample_rate::20, channels::3, sample_size::5, total_samples::36, md5::binary-16>>
-       ) do
-    %FLAC{
-      min_block_size: min_block_size,
-      max_block_size: max_block_size,
-      min_frame_size: min_frame_size,
-      max_frame_size: max_frame_size,
-      sample_rate: sample_rate,
-      channels: channels + 1,
-      sample_size: sample_size + 1,
-      total_samples: total_samples,
-      md5_signature: md5
-    }
+  # FRAME parsing
+  defp do_parse(:frame, data, acc, state) when bit_size(data) < 15 + 1 + 4 + 4 + 4 + 3 + 1 do
+    {:ok, acc, %{state | queue: data, continue: :frame}}
   end
 
-  defp decode_metadata_block(type, _block) when type in 1..6 do
-    nil
-  end
-
-  @doc false
-  def parse_frame(data, acc, state) when bit_size(data) < 15 + 1 + 4 + 4 + 4 + 3 + 1 do
-    {:ok, acc, %{state | queue: data, continue: :parse_frame}}
-  end
-
-  def parse_frame(data, acc, %{caps: %{min_frame_size: min_frame_size}} = state)
-      when min_frame_size != nil and byte_size(data) < min_frame_size do
-    {:ok, acc, %{state | queue: data, continue: :parse_frame}}
+  defp do_parse(:frame, data, acc, %{caps: %{min_frame_size: min_frame_size}} = state)
+       when min_frame_size != nil and byte_size(data) < min_frame_size do
+    {:ok, acc, %{state | queue: data, continue: :frame}}
   end
 
   # no frame parsed yet
-  def parse_frame(
-        <<@frame_start, blocking_strategy::1, _::binary>> = data,
-        acc,
-        %{blocking_strategy: nil} = state
-      ) do
+  defp do_parse(
+         :frame,
+         <<@frame_start, blocking_strategy::1, _::binary>> = data,
+         acc,
+         %{blocking_strategy: nil} = state
+       ) do
     state = %{state | blocking_strategy: blocking_strategy}
 
-    parse_frame(data, acc, state)
+    do_parse(:frame, data, acc, state)
   end
 
   # no full header parsed yet
-  def parse_frame(
-        <<@frame_start, blocking_strategy::1, _::binary>> = data,
-        acc,
-        %{blocking_strategy: blocking_strategy, current_metadata: nil} = state
-      ) do
+  defp do_parse(
+         :frame,
+         <<@frame_start, blocking_strategy::1, _::binary>> = data,
+         acc,
+         %{blocking_strategy: blocking_strategy, current_metadata: nil} = state
+       ) do
     case parse_frame_header(data, state) do
       :nodata ->
-        {:ok, acc, %{state | queue: data, continue: :parse_frame}}
+        {:ok, acc, %{state | queue: data, continue: :frame}}
 
       {:error, _reason} = e ->
         e
 
       {:ok, metadata} ->
-        parse_frame(data, acc, %{state | current_metadata: metadata})
+        do_parse(:frame, data, acc, %{state | current_metadata: metadata})
     end
   end
 
-  def parse_frame(
-        <<@frame_start, blocking_strategy::1, _::binary>> = data,
-        acc,
-        %{blocking_strategy: blocking_strategy, current_metadata: current_metadata, pos: pos} =
-          state
-      ) do
-    # TODO: include pos
-    search_start = max(2, state.caps.min_frame_size || 0)
+  defp do_parse(
+         :frame,
+         <<@frame_start, blocking_strategy::1, _::binary>> = data,
+         acc,
+         %{blocking_strategy: blocking_strategy, current_metadata: current_metadata, pos: pos} =
+           state
+       ) do
+    # TODO: include position in queue to prevent scanning the same bytes
+    # Skip at least frame_start
+    search_start = max(byte_size(@frame_start), state.caps.min_frame_size || 0)
 
     search_end =
       case state.caps.max_frame_size do
@@ -235,23 +217,46 @@ defmodule Membrane.Element.FLACParser.Parser do
 
       res when res in [:nomatch, :nodata] ->
         # `search_end` was limited by the size of data or parsing needs more data
-        {:ok, acc, %{state | queue: data, continue: :parse_frame}}
+        {:ok, acc, %{state | queue: data, continue: :frame}}
 
       {frame, rest, next_metadata} ->
         buf = %Buffer{payload: frame, metadata: current_metadata}
 
-        parse_frame(rest, [buf | acc], %{
+        do_parse(:frame, rest, [buf | acc], %{
           state
           | pos: pos + byte_size(frame),
             queue: "",
-            continue: :parse_frame,
+            continue: :frame,
             current_metadata: next_metadata
         })
     end
   end
 
-  def parse_frame(_data, acc, state) do
+  defp do_parse(:frame, _data, acc, state) do
     {:error, {:invalid_frame, pos: state.pos}, acc}
+  end
+
+  # STREAMDATA
+  defp decode_metadata_block(
+         0,
+         <<min_block_size::16, max_block_size::16, min_frame_size::24, max_frame_size::24,
+           sample_rate::20, channels::3, sample_size::5, total_samples::36, md5::binary-16>>
+       ) do
+    %FLAC{
+      min_block_size: min_block_size,
+      max_block_size: max_block_size,
+      min_frame_size: min_frame_size,
+      max_frame_size: max_frame_size,
+      sample_rate: sample_rate,
+      channels: channels + 1,
+      sample_size: sample_size + 1,
+      total_samples: total_samples,
+      md5_signature: md5
+    }
+  end
+
+  defp decode_metadata_block(type, _block) when type in 1..6 do
+    nil
   end
 
   @spec parse_frame_header(binary(), state()) ::
