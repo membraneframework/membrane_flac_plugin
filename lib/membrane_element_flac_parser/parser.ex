@@ -438,76 +438,34 @@ defmodule Membrane.Element.FLACParser.Parser do
     :nodata
   end
 
-  defp decode_utf8_num(<<0::1, num::7, rest::binary>>) do
-    {:ok, num, rest}
+  defp decode_utf8_num(<<first_byte, rest::binary>>) do
+    case <<first_byte>> do
+      <<0::1, num::7>> -> {:ok, num, rest}
+      <<0b110::3, num_part::bitstring>> -> decode_utf8_num_tail(rest, num_part, 1)
+      <<0b1110::4, num_part::bitstring>> -> decode_utf8_num_tail(rest, num_part, 2)
+      <<0b11110::5, num_part::bitstring>> -> decode_utf8_num_tail(rest, num_part, 3)
+      <<0b111110::6, num_part::bitstring>> -> decode_utf8_num_tail(rest, num_part, 4)
+      <<0b1111110::7, num_part::bitstring>> -> decode_utf8_num_tail(rest, num_part, 5)
+      <<0b11111110::8>> -> decode_utf8_num_tail(rest, <<>>, 6)
+      _ -> {:error, :invalid_utf8_num}
+    end
   end
 
-  defp decode_utf8_num(<<0b110::3, _::bitstring>> = data) when byte_size(data) < 2 do
+  defp decode_utf8_num_tail(rest, _acc, bytes_num) when byte_size(rest) < bytes_num do
     :nodata
   end
 
-  defp decode_utf8_num(<<0b110::3, a::5, 0b10::2, b::6, rest::binary>>) do
-    <<num::11>> = <<a::5, b::6>>
+  defp decode_utf8_num_tail(rest, acc, 0) do
+    size = bit_size(acc)
+    <<num::size(size)>> = acc
     {:ok, num, rest}
   end
 
-  defp decode_utf8_num(<<0b1110::4, _::bitstring>> = data) when byte_size(data) < 3 do
-    :nodata
+  defp decode_utf8_num_tail(<<0b10::2, num_part::6, rest::binary>>, acc, bytes_num) do
+    decode_utf8_num_tail(rest, <<acc::bitstring, num_part::6>>, bytes_num - 1)
   end
 
-  defp decode_utf8_num(<<0b1110::4, a::4, 0b10::2, b::6, 0b10::2, c::6, rest::binary>>) do
-    <<num::16>> = <<a::4, b::6, c::6>>
-    {:ok, num, rest}
-  end
-
-  defp decode_utf8_num(<<0b11110::5, _::bitstring>> = data) when byte_size(data) < 4 do
-    :nodata
-  end
-
-  defp decode_utf8_num(
-         <<0b11110::5, a::3, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, rest::binary>>
-       ) do
-    <<num::21>> = <<a::3, b::6, c::6, d::6>>
-    {:ok, num, rest}
-  end
-
-  defp decode_utf8_num(<<0b111110::6, _::bitstring>> = data) when byte_size(data) < 5 do
-    :nodata
-  end
-
-  defp decode_utf8_num(
-         <<0b111110::6, a::2, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6,
-           rest::binary>>
-       ) do
-    <<num::26>> = <<a::2, b::6, c::6, d::6, e::6>>
-    {:ok, num, rest}
-  end
-
-  defp decode_utf8_num(<<0b1111110::7, _::bitstring>> = data) when byte_size(data) < 6 do
-    :nodata
-  end
-
-  defp decode_utf8_num(
-         <<0b1111110::7, a::1, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2, e::6,
-           0b10::2, f::6, rest::binary>>
-       ) do
-    <<num::31>> = <<a::1, b::6, c::6, d::6, e::6, f::6>>
-    {:ok, num, rest}
-  end
-
-  defp decode_utf8_num(<<0b11111110::8, _::bitstring>> = data) when byte_size(data) < 7 do
-    :nodata
-  end
-
-  defp decode_utf8_num(
-         <<0b11111110::8, 0b10::2, a::6, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, 0b10::2,
-           e::6, 0b10::2, f::6, rest::binary>>
-       ) do
-    <<num::36>> = <<a::6, b::6, c::6, d::6, e::6, f::6>>
-    {:ok, num, rest}
-  end
-
-  defp decode_utf8_num(_) do
+  defp decode_utf8_num_tail(_rest, _acc, _bytes_num) do
     {:error, :invalid_utf8_num}
   end
 
