@@ -183,31 +183,7 @@ defmodule Membrane.Element.FLACParser.Parser do
 
     search_scope = {search_start, search_end - search_start}
 
-    matches =
-      case blocking_strategy do
-        @blocking_stg_fixed ->
-          :binary.matches(data, @fixed_frame_start, scope: search_scope)
-
-        @blocking_stg_variable ->
-          :binary.matches(data, @variable_frame_start, scope: search_scope)
-      end
-
-    next_frame_search =
-      matches
-      |> Enum.find_value(:nomatch, fn {pos, _len} ->
-        <<frame::binary-size(pos), next_frame_candidate::binary>> = data
-
-        case parse_frame_header(next_frame_candidate, state) do
-          :nodata ->
-            :nodata
-
-          {:error, _reason} ->
-            false
-
-          {:ok, metadata} ->
-            {frame, next_frame_candidate, metadata}
-        end
-      end)
+    next_frame_search = find_next_frame(data, search_scope, state)
 
     case next_frame_search do
       :nomatch when search_end + 2 < byte_size(data) ->
@@ -234,6 +210,33 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   defp do_parse(:frame, _data, acc, state) do
     {:error, {:invalid_frame, pos: state.pos}, acc}
+  end
+
+  defp find_next_frame(data, search_scope, %{blocking_strategy: blocking_strategy} = state) do
+    matches =
+      case blocking_strategy do
+        @blocking_stg_fixed ->
+          :binary.matches(data, @fixed_frame_start, scope: search_scope)
+
+        @blocking_stg_variable ->
+          :binary.matches(data, @variable_frame_start, scope: search_scope)
+      end
+
+    matches
+    |> Enum.find_value(:nomatch, fn {pos, _len} ->
+      <<frame::binary-size(pos), next_frame_candidate::binary>> = data
+
+      case parse_frame_header(next_frame_candidate, state) do
+        :nodata ->
+          :nodata
+
+        {:error, _reason} ->
+          false
+
+        {:ok, metadata} ->
+          {frame, next_frame_candidate, metadata}
+      end
+    end)
   end
 
   # STREAMDATA
