@@ -22,8 +22,8 @@ defmodule Membrane.Element.FLACParser.Parser do
   @blocking_stg_fixed 0
   @blocking_stg_variable 1
 
-  @fixed_frame_start <<0b111111111111100::15, @blocking_stg_fixed::1>>
-  @variable_frame_start <<0b111111111111100::15, @blocking_stg_variable::1>>
+  @fixed_frame_start <<@frame_start::bitstring, @blocking_stg_fixed::1>>
+  @variable_frame_start <<@frame_start::bitstring, @blocking_stg_variable::1>>
 
   @typedoc """
   Opaque struct containing state of the parser.
