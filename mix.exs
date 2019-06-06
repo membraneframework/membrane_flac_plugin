@@ -34,7 +34,8 @@ defmodule Membrane.Element.FLACParser.MixProject do
     [
       main: "readme",
       extras: ["README.md"],
-      source_ref: "v#{@version}"
+      source_ref: "v#{@version}",
+      nest_modules_by_prefix: [Membrane.Element.FLACParser]
     ]
   end
 
