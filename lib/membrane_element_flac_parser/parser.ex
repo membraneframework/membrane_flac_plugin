@@ -11,7 +11,7 @@ defmodule Membrane.Element.FLACParser.Parser do
   The parsing is done by calling `init/0` and than `parse/2` with the data to parse.
   The last buffer can be obtained by calling `flush/1`
 
-  The parser returns a frame once it encounters a begging of the next one since there's no other
+  The parser returns a frame once it encounters a beginning of the next one since there's no other
   way to determine where the frame ends.
   """
   alias Membrane.{Buffer, Caps}
