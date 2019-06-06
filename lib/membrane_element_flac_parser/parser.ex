@@ -18,12 +18,21 @@ defmodule Membrane.Element.FLACParser.Parser do
   alias Membrane.Caps.Audio.FLAC
 
   @frame_start <<0b111111111111100::15>>
+  @frame_start_size byte_size(@frame_start)
 
   @blocking_stg_fixed 0
   @blocking_stg_variable 1
 
   @fixed_frame_start <<@frame_start::bitstring, @blocking_stg_fixed::1>>
   @variable_frame_start <<@frame_start::bitstring, @blocking_stg_variable::1>>
+
+  @metadata_block_streaminfo 0
+  @metadata_block_padding 1
+  @metadata_block_application 2
+  @metadata_block_seektable 3
+  @metadata_block_vorbis_comment 4
+  @metadata_block_cuesheet 5
+  @metadata_block_picture 6
 
   @typedoc """
   Opaque struct containing state of the parser.
@@ -176,19 +185,17 @@ defmodule Membrane.Element.FLACParser.Parser do
        ) do
     # TODO: include position in queue to prevent scanning the same bytes
     # Skip at least frame_start
-    search_start = max(byte_size(@frame_start), state.caps.min_frame_size || 0)
+    search_start = max(@frame_start_size, state.caps.min_frame_size || 0)
 
     search_end =
       case state.caps.max_frame_size do
         nil -> byte_size(data)
-        max_frame_size -> min(byte_size(data), max_frame_size + byte_size(@frame_start))
+        max_frame_size -> min(byte_size(data), max_frame_size + @frame_start_size)
       end
 
     search_scope = {search_start, search_end - search_start}
 
-    next_frame_search = find_next_frame(data, search_scope, state)
-
-    case next_frame_search do
+    case find_next_frame(data, search_scope, state) do
       :nomatch when search_end < byte_size(data) ->
         # At this point next frame start should've been found
         # because `search_end` was set to max_frame_size + 2
@@ -230,21 +237,15 @@ defmodule Membrane.Element.FLACParser.Parser do
       <<frame::binary-size(pos), next_frame_candidate::binary>> = data
 
       case parse_frame_header(next_frame_candidate, state) do
-        :nodata ->
-          :nodata
-
-        {:error, _reason} ->
-          false
-
-        {:ok, metadata} ->
-          {frame, next_frame_candidate, metadata}
+        :nodata -> :nodata
+        {:error, _reason} -> false
+        {:ok, metadata} -> {frame, next_frame_candidate, metadata}
       end
     end)
   end
 
-  # STREAMDATA
   defp decode_metadata_block(
-         0,
+         @metadata_block_streaminfo,
          <<min_block_size::16, max_block_size::16, min_frame_size::24, max_frame_size::24,
            sample_rate::20, channels::3, sample_size::5, total_samples::36, md5::binary-16>>
        ) do
@@ -261,7 +262,16 @@ defmodule Membrane.Element.FLACParser.Parser do
     }
   end
 
-  defp decode_metadata_block(type, _block) when type in 1..6 do
+  defp decode_metadata_block(type, _block)
+       when type in [
+              @metadata_block_padding,
+              @metadata_block_application,
+              @metadata_block_seektable,
+              @metadata_block_vorbis_comment,
+              @metadata_block_cuesheet,
+              @metadata_block_picture
+            ] do
+    # TODO: Parse other metadata blocks in future
     nil
   end
 
