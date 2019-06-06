@@ -32,7 +32,7 @@ defmodule Membrane.Element.FLACParser do
   end
 
   @impl true
-  def handle_process(_pad, %Buffer{payload: payload}, _ctx, %{parser: parser} = state) do
+  def handle_process(:input, %Buffer{payload: payload}, _ctx, %{parser: parser} = state) do
     {:ok, results, parser} = Parser.parse(payload, parser)
 
     actions =
