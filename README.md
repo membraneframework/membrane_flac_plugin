@@ -1,7 +1,7 @@
 # Membrane Multimedia Framework: FLACParser
 
 [![Hex.pm](https://img.shields.io/hexpm/v/membrane_element_flac_parser.svg)](https://hex.pm/packages/membrane_element_flac_parser)
-[![CircleCI](https://circleci.com/gh/membraneframework/membrane-element-flac-parser)](https://circleci.com/gh/membraneframework/membrane-element-flac-parser)
+[![CircleCI](https://circleci.com/gh/membraneframework/membrane-element-flac-parser.svg?style=svg)](https://circleci.com/gh/membraneframework/membrane-element-flac-parser)
 
 This package provides an element parsing FLAC encoded audio stream.
 More info can be found in [the docs for element module](https://hexdocs.pm/membrane_element_flac_parser).
