@@ -181,7 +181,7 @@ defmodule Membrane.Element.FLACParser.Parser do
     search_end =
       case state.caps.max_frame_size do
         nil -> byte_size(data)
-        max_frame_size -> min(byte_size(data), max_frame_size + 2)
+        max_frame_size -> min(byte_size(data), max_frame_size + byte_size(@frame_start))
       end
 
     search_scope = {search_start, search_end - search_start}
@@ -189,7 +189,7 @@ defmodule Membrane.Element.FLACParser.Parser do
     next_frame_search = find_next_frame(data, search_scope, state)
 
     case next_frame_search do
-      :nomatch when search_end + 2 < byte_size(data) ->
+      :nomatch when search_end < byte_size(data) ->
         # At this point next frame start should've been found
         # because `search_end` was set to max_frame_size + 2
         {:error, {:invalid_frame, pos: state.pos}, acc}
@@ -275,6 +275,10 @@ defmodule Membrane.Element.FLACParser.Parser do
                | :invalid_sample_rate
                | :invalid_utf8_num
                | {:invalid_header, any()}
+  defp parse_frame_header(data, _state) when byte_size(data) < 4 do
+    :nodata
+  end
+
   defp parse_frame_header(
          <<@frame_start, blocking_strategy::1, block_size::4, sample_rate::4, channels::4,
            sample_size::3, 0::1, rest::binary>> = data,
