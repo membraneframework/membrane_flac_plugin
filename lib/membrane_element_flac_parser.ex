@@ -57,7 +57,7 @@ defmodule Membrane.Element.FLACParser do
       if caps == nil do
         @initial_demand
       else
-        caps.min_frame_size * size
+        caps.mix_frame_size * size
       end
 
     {{:ok, demand: {:input, demand}}, state}
