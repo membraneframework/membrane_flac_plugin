@@ -14,11 +14,13 @@ defmodule Membrane.Element.FLACParser.Parser do
   alias Membrane.{Buffer, Caps}
   alias Membrane.Caps.Audio.FLAC
 
+  @frame_start <<0b111111111111100::15>>
+
   @blocking_stg_fixed 0
   @blocking_stg_variable 1
 
-  @fixed_frame_start <<0b1111111111111000::16>>
-  @variable_frame_start <<0b1111111111111001::16>>
+  @fixed_frame_start <<0b111111111111100::15, @blocking_stg_fixed::1>>
+  @variable_frame_start <<0b111111111111100::15, @blocking_stg_variable::1>>
 
   @typedoc """
   Opaque struct containing state of the parser.
@@ -155,7 +157,7 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   # no frame parsed yet
   def parse_frame(
-        <<0b111111111111100::15, blocking_strategy::1, _::binary>> = data,
+        <<@frame_start, blocking_strategy::1, _::binary>> = data,
         acc,
         %{blocking_strategy: nil} = state
       ) do
@@ -166,7 +168,7 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   # no full header parsed yet
   def parse_frame(
-        <<0b111111111111100::15, blocking_strategy::1, _::binary>> = data,
+        <<@frame_start, blocking_strategy::1, _::binary>> = data,
         acc,
         %{blocking_strategy: blocking_strategy, current_metadata: nil} = state
       ) do
@@ -183,7 +185,7 @@ defmodule Membrane.Element.FLACParser.Parser do
   end
 
   def parse_frame(
-        <<0b111111111111100::15, blocking_strategy::1, _::binary>> = data,
+        <<@frame_start, blocking_strategy::1, _::binary>> = data,
         acc,
         %{blocking_strategy: blocking_strategy, current_metadata: current_metadata, pos: pos} =
           state
@@ -221,11 +223,7 @@ defmodule Membrane.Element.FLACParser.Parser do
             false
 
           {:ok, metadata} ->
-            if is_metadata_valid(metadata, state) do
-              {frame, next_frame_candidate, metadata}
-            else
-              false
-            end
+            {frame, next_frame_candidate, metadata}
         end
       end)
 
@@ -235,11 +233,8 @@ defmodule Membrane.Element.FLACParser.Parser do
         # because `search_end` was set to max_frame_size + 2
         {:error, {:invalid_frame, pos: state.pos}, acc}
 
-      :nomatch ->
-        # `search_end` was limited by the size of data
-        {:ok, acc, %{state | queue: data, continue: :parse_frame}}
-
-      :nodata ->
+      res when res in [:nomatch, :nodata] ->
+        # `search_end` was limited by the size of data or parsing needs more data
         {:ok, acc, %{state | queue: data, continue: :parse_frame}}
 
       {frame, rest, next_metadata} ->
@@ -270,17 +265,17 @@ defmodule Membrane.Element.FLACParser.Parser do
                | :invalid_utf8_num
                | {:invalid_header, any()}
   defp parse_frame_header(
-         <<0b111111111111100::15, blocking_strategy::1, block_size::4, sample_rate::4,
-           channels::4, sample_size::3, 0::1, rest::binary>> = data,
+         <<@frame_start, blocking_strategy::1, block_size::4, sample_rate::4, channels::4,
+           sample_size::3, 0::1, rest::binary>> = data,
          %{blocking_strategy: blocking_strategy} = state
        )
        when block_size != 0 and sample_rate != 0b1111 and channels not in 0b1011..0b1111 and
               sample_size not in [0b011, 0b111] do
-    with {:ok, number, consumed_utf8, rest} <- decode_utf8_num(rest),
-         {:ok, block_size, consumed_bs, rest} <- decode_block_size(block_size, rest),
-         {:ok, sample_rate, consumed_sr, rest} <- decode_sample_rate(sample_rate, rest, state),
-         <<crc8::8, _rest::binary>> <- if(byte_size(rest) < 1, do: :nodata, else: rest),
-         header_size = 4 + consumed_utf8 + consumed_bs + consumed_sr,
+    with {:ok, number, rest} <- decode_utf8_num(rest),
+         {:ok, block_size, rest} <- decode_block_size(block_size, rest),
+         {:ok, sample_rate, rest} <- decode_sample_rate(sample_rate, rest, state),
+         header_size = byte_size(data) - byte_size(rest),
+         <<crc8::8, _rest::binary>> <- if(rest == <<>>, do: :nodata, else: rest),
          <<header::binary-size(header_size), _::binary>> = data,
          :ok <- verify_crc(header, crc8) do
       sample_number =
@@ -307,15 +302,20 @@ defmodule Membrane.Element.FLACParser.Parser do
           _ -> {channels + 1, :independent}
         end
 
-      {:ok,
-       %FLAC.FrameMetadata{
-         channels: channels,
-         channel_mode: channel_mode,
-         starting_sample_number: sample_number,
-         samples: block_size,
-         sample_rate: sample_rate,
-         sample_size: sample_size
-       }}
+      metadata = %FLAC.FrameMetadata{
+        channels: channels,
+        channel_mode: channel_mode,
+        starting_sample_number: sample_number,
+        samples: block_size,
+        sample_rate: sample_rate,
+        sample_size: sample_size
+      }
+
+      if metadata_valid?(metadata, state) do
+        {:ok, metadata}
+      else
+        {:error, {:invalid_header, pos: state.pos}}
+      end
     end
   end
 
@@ -323,8 +323,17 @@ defmodule Membrane.Element.FLACParser.Parser do
     {:error, {:invalid_header, pos: state.pos}}
   end
 
-  defp is_metadata_valid(metadata, %{caps: caps, current_metadata: last_meta}) do
-    metadata.starting_sample_number == last_meta.starting_sample_number + last_meta.samples and
+  defp metadata_valid?(metadata, %{caps: caps, current_metadata: last_meta}) do
+    expected_sample_number =
+      case last_meta do
+        nil ->
+          0
+
+        %{starting_sample_number: starting_sample_number, samples: samples} ->
+          starting_sample_number + samples
+      end
+
+    metadata.starting_sample_number == expected_sample_number and
       metadata.channels == caps.channels and
       metadata.sample_rate == caps.sample_rate and
       metadata.sample_size == caps.sample_size and
@@ -336,22 +345,22 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   @spec decode_block_size(byte(), binary()) ::
           :nodata
-          | {:ok, pos_integer(), non_neg_integer(), binary()}
+          | {:ok, pos_integer(), binary()}
           | {:error, :invalid_block_size}
   defp decode_block_size(0b0000, _rest) do
     {:error, :invalid_block_size}
   end
 
   defp decode_block_size(0b0001, rest) do
-    {:ok, 192, 0, rest}
+    {:ok, 192, rest}
   end
 
-  defp decode_block_size(0b0110, rest) when byte_size(rest) < 1 do
+  defp decode_block_size(0b0110, <<>>) do
     :nodata
   end
 
   defp decode_block_size(0b0110, <<block_size::8, rest::binary>>) do
-    {:ok, block_size + 1, 1, rest}
+    {:ok, block_size + 1, rest}
   end
 
   defp decode_block_size(0b0111, rest) when byte_size(rest) < 2 do
@@ -359,77 +368,29 @@ defmodule Membrane.Element.FLACParser.Parser do
   end
 
   defp decode_block_size(0b0111, <<block_size::16, rest::binary>>) do
-    {:ok, block_size + 1, 2, rest}
+    {:ok, block_size + 1, rest}
   end
 
   defp decode_block_size(block_size, rest) when block_size in 0b0010..0b0101 do
     use Bitwise
-    {:ok, 576 <<< (block_size - 2), 0, rest}
+    {:ok, 576 <<< (block_size - 2), rest}
   end
 
   defp decode_block_size(block_size, rest) when block_size in 0b1000..0b1111 do
     use Bitwise
-    {:ok, 1 <<< block_size, 0, rest}
+    {:ok, 1 <<< block_size, rest}
   end
 
   @spec decode_sample_rate(byte, binary(), state()) ::
-          {:ok, sample_rate :: non_neg_integer(), consumed :: non_neg_integer(), rest :: binary()}
+          {:ok, sample_rate :: non_neg_integer(), rest :: binary()}
           | {:error, :invalid_sample_rate}
           | :nodata
-  defp decode_sample_rate(0b0000, rest, state) do
-    {:ok, state.caps.sample_rate, 0, rest}
-  end
-
-  defp decode_sample_rate(0b0001, rest, _state) do
-    {:ok, 88_200, 0, rest}
-  end
-
-  defp decode_sample_rate(0b0010, rest, _state) do
-    {:ok, 176_400, 0, rest}
-  end
-
-  defp decode_sample_rate(0b0011, rest, _state) do
-    {:ok, 192_000, 0, rest}
-  end
-
-  defp decode_sample_rate(0b0100, rest, _state) do
-    {:ok, 8000, 0, rest}
-  end
-
-  defp decode_sample_rate(0b0101, rest, _state) do
-    {:ok, 16_000, 0, rest}
-  end
-
-  defp decode_sample_rate(0b0110, rest, _state) do
-    {:ok, 22_050, 0, rest}
-  end
-
-  defp decode_sample_rate(0b0111, rest, _state) do
-    {:ok, 24_000, 0, rest}
-  end
-
-  defp decode_sample_rate(0b1000, rest, _state) do
-    {:ok, 32_000, 0, rest}
-  end
-
-  defp decode_sample_rate(0b1001, rest, _state) do
-    {:ok, 44_100, 0, rest}
-  end
-
-  defp decode_sample_rate(0b1010, rest, _state) do
-    {:ok, 48_000, 0, rest}
-  end
-
-  defp decode_sample_rate(0b1011, rest, _state) do
-    {:ok, 96_000, 0, rest}
-  end
-
-  defp decode_sample_rate(0b1100, rest, _state) when byte_size(rest) < 1 do
+  defp decode_sample_rate(0b1100, <<>>, _state) do
     :nodata
   end
 
   defp decode_sample_rate(0b1100, <<sample_rate::8, rest::binary>>, _state) do
-    {:ok, sample_rate * 1000, 1, rest}
+    {:ok, sample_rate * 1000, rest}
   end
 
   defp decode_sample_rate(raw_sample_rate, rest, _state)
@@ -438,27 +399,47 @@ defmodule Membrane.Element.FLACParser.Parser do
   end
 
   defp decode_sample_rate(0b1101, <<sample_rate::16, rest::binary>>, _state) do
-    {:ok, sample_rate, 2, rest}
+    {:ok, sample_rate, rest}
   end
 
   defp decode_sample_rate(0b1110, <<sample_rate::16, rest::binary>>, _state) do
-    {:ok, sample_rate * 10, 2, rest}
+    {:ok, sample_rate * 10, rest}
   end
 
   defp decode_sample_rate(0b1111, _rest, _state) do
     {:error, :invalid_sample_rate}
   end
 
+  defp decode_sample_rate(raw_sample_rate, rest, state) do
+    sample_rate =
+      case raw_sample_rate do
+        0b0000 -> state.caps.sample_rate
+        0b0001 -> 88_200
+        0b0010 -> 176_400
+        0b0011 -> 192_000
+        0b0100 -> 8000
+        0b0101 -> 16_000
+        0b0110 -> 22_050
+        0b0111 -> 24_000
+        0b1000 -> 32_000
+        0b1001 -> 44_100
+        0b1010 -> 48_000
+        0b1011 -> 96_000
+      end
+
+    {:ok, sample_rate, rest}
+  end
+
   @spec decode_utf8_num(binary()) ::
-          {:ok, decoded_num :: non_neg_integer(), consumed :: non_neg_integer(), rest :: binary()}
+          {:ok, decoded_num :: non_neg_integer(), rest :: binary()}
           | {:error, :invalid_utf8_num}
           | :nodata
-  defp decode_utf8_num(data) when byte_size(data) < 1 do
+  defp decode_utf8_num(<<>>) do
     :nodata
   end
 
   defp decode_utf8_num(<<0::1, num::7, rest::binary>>) do
-    {:ok, num, 1, rest}
+    {:ok, num, rest}
   end
 
   defp decode_utf8_num(<<0b110::3, _::bitstring>> = data) when byte_size(data) < 2 do
@@ -467,7 +448,7 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   defp decode_utf8_num(<<0b110::3, a::5, 0b10::2, b::6, rest::binary>>) do
     <<num::11>> = <<a::5, b::6>>
-    {:ok, num, 2, rest}
+    {:ok, num, rest}
   end
 
   defp decode_utf8_num(<<0b1110::4, _::bitstring>> = data) when byte_size(data) < 3 do
@@ -476,7 +457,7 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   defp decode_utf8_num(<<0b1110::4, a::4, 0b10::2, b::6, 0b10::2, c::6, rest::binary>>) do
     <<num::16>> = <<a::4, b::6, c::6>>
-    {:ok, num, 3, rest}
+    {:ok, num, rest}
   end
 
   defp decode_utf8_num(<<0b11110::5, _::bitstring>> = data) when byte_size(data) < 4 do
@@ -487,7 +468,7 @@ defmodule Membrane.Element.FLACParser.Parser do
          <<0b11110::5, a::3, 0b10::2, b::6, 0b10::2, c::6, 0b10::2, d::6, rest::binary>>
        ) do
     <<num::21>> = <<a::3, b::6, c::6, d::6>>
-    {:ok, num, 4, rest}
+    {:ok, num, rest}
   end
 
   defp decode_utf8_num(<<0b111110::6, _::bitstring>> = data) when byte_size(data) < 5 do
@@ -499,7 +480,7 @@ defmodule Membrane.Element.FLACParser.Parser do
            rest::binary>>
        ) do
     <<num::26>> = <<a::2, b::6, c::6, d::6, e::6>>
-    {:ok, num, 5, rest}
+    {:ok, num, rest}
   end
 
   defp decode_utf8_num(<<0b1111110::7, _::bitstring>> = data) when byte_size(data) < 6 do
@@ -511,7 +492,7 @@ defmodule Membrane.Element.FLACParser.Parser do
            0b10::2, f::6, rest::binary>>
        ) do
     <<num::31>> = <<a::1, b::6, c::6, d::6, e::6, f::6>>
-    {:ok, num, 6, rest}
+    {:ok, num, rest}
   end
 
   defp decode_utf8_num(<<0b11111110::8, _::bitstring>> = data) when byte_size(data) < 7 do
@@ -523,7 +504,7 @@ defmodule Membrane.Element.FLACParser.Parser do
            e::6, 0b10::2, f::6, rest::binary>>
        ) do
     <<num::36>> = <<a::6, b::6, c::6, d::6, e::6, f::6>>
-    {:ok, num, 7, rest}
+    {:ok, num, rest}
   end
 
   defp decode_utf8_num(_) do
