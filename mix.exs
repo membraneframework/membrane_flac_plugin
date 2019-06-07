@@ -35,8 +35,19 @@ defmodule Membrane.Element.FLACParser.MixProject do
       main: "readme",
       extras: ["README.md"],
       source_ref: "v#{@version}",
-      nest_modules_by_prefix: [Membrane.Element.FLACParser]
+      nest_modules_by_prefix: [Membrane.Element.FLACParser],
+      before_closing_head_tag: &sidebar_fix/1
     ]
+  end
+
+  defp sidebar_fix(_) do
+    """
+      <style type="text/css">
+      .sidebar div.sidebar-header {
+        margin: 15px;
+      }
+      </style>
+    """
   end
 
   defp package do
