@@ -7,6 +7,7 @@ defmodule Membrane.Element.FLACParser.Parser do
   2. `Membrane.Buffer` with "fLaC" - the FLAC stream marker in ASCII
   3. At least one `Membrane.Buffer` with metadata block(s)
   4. `Membrane.Buffer`s containing one frame each, with decoded metadata from its header
+     (as `Membrane.Caps.Audio.FLAC.FrameMetadata` struct)
 
   The parsing is done by calling `init/0` and than `parse/2` with the data to parse.
   The last buffer can be obtained by calling `flush/1`

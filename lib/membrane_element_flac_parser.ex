@@ -1,4 +1,9 @@
 defmodule Membrane.Element.FLACParser do
+  @moduledoc """
+  An element parsing FLAC encoded audio stream.
+
+  Wraps `Membrane.Element.FLACParser.Parser`, see its docs for more info.
+  """
   use Membrane.Element.Base.Filter
   alias Membrane.Caps.Audio.FLAC
   alias Membrane.Buffer
@@ -57,7 +62,7 @@ defmodule Membrane.Element.FLACParser do
       if caps == nil do
         @initial_demand
       else
-        caps.mix_frame_size * size
+        caps.max_frame_size * size
       end
 
     {{:ok, demand: {:input, demand}}, state}

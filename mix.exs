@@ -34,8 +34,20 @@ defmodule Membrane.Element.FLACParser.MixProject do
     [
       main: "readme",
       extras: ["README.md"],
-      source_ref: "v#{@version}"
+      source_ref: "v#{@version}",
+      nest_modules_by_prefix: [Membrane.Element.FLACParser],
+      before_closing_head_tag: &sidebar_fix/1
     ]
+  end
+
+  defp sidebar_fix(_) do
+    """
+      <style type="text/css">
+      .sidebar div.sidebar-header {
+        margin: 15px;
+      }
+      </style>
+    """
   end
 
   defp package do
@@ -55,7 +67,8 @@ defmodule Membrane.Element.FLACParser.MixProject do
       {:membrane_caps_audio_flac, "~> 0.1.1"},
       {:crc, "~> 0.9.2"},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false},
-      {:dialyxir, "~> 1.0.0-rc.4", only: [:dev], runtime: false}
+      {:dialyxir, "~> 1.0.0-rc.4", only: :dev, runtime: false},
+      {:membrane_element_file, "~> 0.2.0", only: :test}
     ]
   end
 end
