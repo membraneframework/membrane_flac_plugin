@@ -21,7 +21,7 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
   import Membrane.Testing.Pipeline.Assertions
   alias Membrane.Pipeline
 
-  def fixture_paths(filename) do
+  defp prepare_files(filename) do
     in_path = "../fixtures/#{filename}.flac" |> Path.expand(__DIR__)
     out_path = "/tmp/parsed-#{filename}.flac"
     File.rm(out_path)
@@ -30,7 +30,7 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
   end
 
   test "parse whole 'noise.flac' file" do
-    {in_path, out_path} = fixture_paths("noise")
+    {in_path, out_path} = prepare_files("noise")
     assert {:ok, pid} = ParsingPipeline.make_pipeline(in_path, out_path)
 
     # Start the pipeline
