@@ -13,7 +13,7 @@ The package can be installed by adding `membrane_element_flac_parser` to your li
 ```elixir
 def deps do
   [
-    {:membrane_element_flac_parser, "~> 0.1.0"}
+    {:membrane_element_flac_parser, "~> 0.2"}
   ]
 end
 ```
@@ -24,8 +24,8 @@ This project is sponsored by [Abridge AI, Inc.](https://abridge.ai)
 
 ## Copyright and License
 
-Copyright 2019, [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane-caps-audio-flac)
+Copyright 2019, [Software Mansion](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane-element-flac-parser)
 
-[![Software Mansion](https://membraneframework.github.io/static/logo/swm_logo_readme.png)](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane-caps-audio-flac)
+[![Software Mansion](https://membraneframework.github.io/static/logo/swm_logo_readme.png)](https://swmansion.com/?utm_source=git&utm_medium=readme&utm_campaign=membrane-element-flac-parser)
 
 Licensed under the [Apache License, Version 2.0](LICENSE)
