@@ -3,11 +3,11 @@ defmodule ParsingPipeline do
 
   alias Membrane.Testing.Pipeline
 
-  def make_pipeline(in_path, out_path, pid \\ self()) do
+  def make_pipeline(in_path, out_path, streaming?, pid \\ self()) do
     Pipeline.start_link(%Pipeline.Options{
       elements: [
         file_src: %Membrane.Element.File.Source{location: in_path},
-        parser: Membrane.Element.FLACParser,
+        parser: %Membrane.Element.FLACParser{streaming?: streaming?},
         sink: %Membrane.Element.File.Sink{location: out_path}
       ],
       monitored_callbacks: [:handle_notification],
@@ -29,9 +29,9 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
     {in_path, out_path}
   end
 
-  test "parse whole 'noise.flac' file" do
-    {in_path, out_path} = prepare_files("noise")
-    assert {:ok, pid} = ParsingPipeline.make_pipeline(in_path, out_path)
+  defp assert_parsing_success(filename, streaming?) do
+    {in_path, out_path} = prepare_files(filename)
+    assert {:ok, pid} = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
     # Start the pipeline
     assert Pipeline.play(pid) == :ok
@@ -40,5 +40,38 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
     src_data = File.read!(in_path)
     out_data = File.read!(out_path)
     assert src_data == out_data
+  end
+
+  defp assert_parsing_failure(filename, streaming?, reason_pattern) do
+    {in_path, out_path} = prepare_files(filename)
+    assert {:ok, pid} = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
+
+    Process.flag(:trap_exit, true)
+    assert Pipeline.play(pid) == :ok
+    assert_receive {:EXIT, ^pid, reason}, 3000
+    assert {%RuntimeError{message: msg}, _stacktrace} = reason
+    assert msg =~ reason_pattern
+  end
+
+  @moduletag :capture_log
+
+  test "parse whole 'noise.flac' file" do
+    assert_parsing_success("noise", false)
+  end
+
+  test "parse whole 'noise.flac' file in streaming mode" do
+    assert_parsing_success("noise", true)
+  end
+
+  test "parse streamed file (only frames, no headers) in streaming mode" do
+    assert_parsing_success("only_frames", true)
+  end
+
+  test "fail when parsing streamed file (only frames, no headers) without streaming mode" do
+    assert_parsing_failure("only_frames", false, "not_stream")
+  end
+
+  test "fail when parsing file with junk at the end without streaming mode" do
+    assert_parsing_failure("noise_and_junk", false, "invalid_frame")
   end
 end

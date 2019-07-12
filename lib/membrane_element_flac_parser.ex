@@ -19,35 +19,46 @@ defmodule Membrane.Element.FLACParser do
     caps: :any,
     demand_unit: :bytes
 
+  def_options streaming?: [
+                description: """
+                This option set to `true` allows parser to accept FLAC stream,
+                e.g. only frames without header
+                """,
+                default: false,
+                type: :boolean
+              ]
+
   @impl true
-  def handle_init(_opts) do
-    {:ok, %{parser: nil}}
+  def handle_init(opts) do
+    {:ok, opts |> Map.from_struct() |> Map.merge(%{parser: nil})}
   end
 
   @impl true
-  def handle_stopped_to_prepared(_, state) do
-    state = %{state | parser: Parser.init()}
+  def handle_stopped_to_prepared(_ctx, %{streaming?: streaming?} = state) do
+    state = %{state | parser: Parser.init(streaming?)}
     {:ok, state}
   end
 
   @impl true
-  def handle_prepared_to_stopped(_, state) do
+  def handle_prepared_to_stopped(_ctx, state) do
     state = %{state | parser: nil}
     {:ok, state}
   end
 
   @impl true
   def handle_process(:input, %Buffer{payload: payload}, _ctx, %{parser: parser} = state) do
-    {:ok, results, parser} = Parser.parse(payload, parser)
+    with {:ok, results, parser} <- Parser.parse(payload, parser) do
+      actions =
+        results
+        |> Enum.map(fn
+          %FLAC{} = caps -> {:caps, {:output, caps}}
+          %Buffer{} = buf -> {:buffer, {:output, buf}}
+        end)
 
-    actions =
-      results
-      |> Enum.map(fn
-        %FLAC{} = caps -> {:caps, {:output, caps}}
-        %Buffer{} = buf -> {:buffer, {:output, buf}}
-      end)
-
-    {{:ok, actions ++ [redemand: :output]}, %{state | parser: parser}}
+      {{:ok, actions ++ [redemand: :output]}, %{state | parser: parser}}
+    else
+      {:error, reason} -> raise "Parsing error: #{inspect(reason)}"
+    end
   end
 
   @impl true
@@ -59,10 +70,10 @@ defmodule Membrane.Element.FLACParser do
     caps = ctx.pads.output.caps
 
     demand =
-      if caps == nil do
-        @initial_demand
-      else
+      if caps != nil and caps.max_frame_size != nil do
         caps.max_frame_size * size
+      else
+        @initial_demand * size
       end
 
     {{:ok, demand: {:input, demand}}, state}

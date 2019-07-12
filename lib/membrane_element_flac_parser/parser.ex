@@ -52,14 +52,15 @@ defmodule Membrane.Element.FLACParser.Parser do
             pos: 0,
             caps: nil,
             blocking_strategy: nil,
-            current_metadata: nil
+            current_metadata: nil,
+            streaming?: false
 
   @doc """
   Returns an initialized parser state
   """
-  @spec init() :: state()
-  def init() do
-    %__MODULE__{}
+  @spec init(boolean()) :: state()
+  def init(streaming? \\ false) do
+    %__MODULE__{streaming?: streaming?}
   end
 
   @doc """
@@ -101,8 +102,12 @@ defmodule Membrane.Element.FLACParser.Parser do
     do_parse(:metadata_block, tail, [buf | acc], %{state | pos: 4})
   end
 
-  defp do_parse(:stream, _, _, state) do
+  defp do_parse(:stream, _, _, %{streaming?: false} = state) do
     {:error, {:not_stream, pos: state.pos}}
+  end
+
+  defp do_parse(:stream, data, acc, %{streaming?: true} = state) do
+    do_parse(:frame, data, acc, state)
   end
 
   # METADATA_BLOCK parsing
@@ -173,6 +178,15 @@ defmodule Membrane.Element.FLACParser.Parser do
         e
 
       {:ok, metadata} ->
+        {acc, state} =
+          if state.streaming? and state.caps == nil do
+            # header haven't beeen parsed, so we need to generate caps from metadata
+            caps = caps_from_metadata(blocking_strategy, metadata)
+            {acc ++ [caps], %{state | caps: caps}}
+          else
+            {acc, state}
+          end
+
         do_parse(:frame, data, acc, %{state | current_metadata: metadata})
     end
   end
@@ -200,7 +214,7 @@ defmodule Membrane.Element.FLACParser.Parser do
       :nomatch when search_end < byte_size(data) ->
         # At this point next frame start should've been found
         # because `search_end` was set to max_frame_size + 2
-        {:error, {:invalid_frame, pos: state.pos}, acc}
+        {:error, {:invalid_frame, pos: state.pos}}
 
       res when res in [:nomatch, :nodata] ->
         # `search_end` was limited by the size of data or parsing needs more data
@@ -219,8 +233,19 @@ defmodule Membrane.Element.FLACParser.Parser do
     end
   end
 
-  defp do_parse(:frame, _data, acc, state) do
-    {:error, {:invalid_frame, pos: state.pos}, acc}
+  defp do_parse(:frame, _data, _acc, state) do
+    {:error, {:invalid_frame, pos: state.pos}}
+  end
+
+  defp caps_from_metadata(blocking_strategy, metadata) do
+    keys = metadata |> Map.take([:sample_rate, :channels, :sample_size])
+    caps = struct!(FLAC, keys)
+
+    if blocking_strategy == @blocking_stg_fixed do
+      %{caps | min_block_size: metadata.samples, max_block_size: metadata.samples}
+    else
+      caps
+    end
   end
 
   defp find_next_frame(data, search_scope, %{blocking_strategy: blocking_strategy} = state) do
@@ -305,9 +330,10 @@ defmodule Membrane.Element.FLACParser.Parser do
          <<header::binary-size(header_size), _::binary>> = data,
          :ok <- verify_crc(header, crc8) do
       sample_number =
-        case blocking_strategy do
-          0 -> number * state.caps.min_block_size
-          1 -> number
+        case {blocking_strategy, state.caps} do
+          {@blocking_stg_fixed, nil} -> number * block_size
+          {@blocking_stg_fixed, caps} -> number * caps.min_block_size
+          {@blocking_stg_variable, _} -> number
         end
 
       sample_size =
@@ -347,6 +373,12 @@ defmodule Membrane.Element.FLACParser.Parser do
 
   defp parse_frame_header(_data, state) do
     {:error, {:invalid_header, pos: state.pos}}
+  end
+
+  defp metadata_valid?(_metadata, %{caps: nil, current_metadata: nil, streaming?: true}) do
+    # First parsed metadata from the middle of stream
+    # there's no way to verify anything
+    true
   end
 
   defp metadata_valid?(metadata, %{caps: caps, current_metadata: last_meta}) do
