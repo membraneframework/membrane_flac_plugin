@@ -10,7 +10,6 @@ defmodule ParsingPipeline do
         parser: %Membrane.Element.FLACParser{streaming?: streaming?},
         sink: %Membrane.Element.File.Sink{location: out_path}
       ],
-      monitored_callbacks: [:handle_notification],
       test_process: pid
     })
   end
@@ -18,7 +17,7 @@ end
 
 defmodule Membrane.Element.FLACParser.IntegrationTest do
   use ExUnit.Case
-  import Membrane.Testing.Pipeline.Assertions
+  import Membrane.Testing.Assertions
   alias Membrane.Pipeline
 
   defp prepare_files(filename) do
@@ -36,7 +35,7 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
     # Start the pipeline
     assert Pipeline.play(pid) == :ok
     # Wait for EndOfStream message
-    assert_receive_message({:handle_notification, {{:end_of_stream, :input}, :sink}}, 3000)
+    assert_end_of_stream(pid, :sink, :input, 3000)
     src_data = File.read!(in_path)
     out_data = File.read!(out_path)
     assert src_data == out_data

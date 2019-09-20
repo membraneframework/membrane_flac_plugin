@@ -4,10 +4,9 @@ defmodule Membrane.Element.FLACParser do
 
   Wraps `Membrane.Element.FLACParser.Parser`, see its docs for more info.
   """
-  use Membrane.Element.Base.Filter
+  use Membrane.Filter
   alias Membrane.Caps.Audio.FLAC
   alias Membrane.Buffer
-  alias Membrane.Event.EndOfStream
   alias Membrane.Element.FLACParser.Parser
 
   @initial_demand 1024
@@ -80,19 +79,15 @@ defmodule Membrane.Element.FLACParser do
   end
 
   @impl true
-  def handle_event(:input, %EndOfStream{}, _ctx, state) do
+  def handle_end_of_stream(:input, _ctx, state) do
     {:ok, buffer} = Parser.flush(state.parser)
 
     actions = [
       buffer: {:output, buffer},
-      event: {:output, %EndOfStream{}},
+      end_of_stream: :output,
       notify: {:end_of_stream, :input}
     ]
 
     {{:ok, actions}, state}
-  end
-
-  def handle_event(pad, event, ctx, state) do
-    super(pad, event, ctx, state)
   end
 end
