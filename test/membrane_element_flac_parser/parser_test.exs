@@ -30,6 +30,33 @@ defmodule Membrane.Element.FLACParser.ParserTest do
     verify_noise_flac_results(caps_n_bufs, state, data)
   end
 
+  test "parse two_meta_blocks.flac" do
+    data = File.read!(fixture("two_meta_blocks.flac"))
+    assert %Parser{} = Parser.init()
+    assert {:ok, caps_n_bufs, %Parser{} = state} = Parser.parse(data)
+
+    assert [%FLAC{} = caps | bufs] = caps_n_bufs
+    assert caps.sample_rate == 44_100
+    assert caps.sample_size == 16
+    assert caps.channels == 1
+    assert caps.total_samples == nil
+    assert caps.max_block_size == 4096
+    assert caps.min_block_size == 4096
+    assert caps.max_frame_size == nil
+    assert caps.min_frame_size == nil
+    assert caps.md5_signature == nil
+
+    # "fLaC" + 2 metadata blocks + 2 frames
+    assert bufs |> length() == 5
+
+    assert {:ok, last_buf} = Parser.flush(state)
+
+    assert state.pos + byte_size(last_buf.payload) == byte_size(data)
+
+    parsed_file = Enum.map_join(bufs ++ [last_buf], fn %Buffer{payload: payload} -> payload end)
+    assert data == parsed_file
+  end
+
   defp verify_noise_flac_results(caps_n_bufs, state, reference_data) do
     assert [%FLAC{} = caps | bufs] = caps_n_bufs
 
