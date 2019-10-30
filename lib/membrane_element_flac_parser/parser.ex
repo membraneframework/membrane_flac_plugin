@@ -276,15 +276,15 @@ defmodule Membrane.Element.FLACParser.Parser do
            sample_rate::20, channels::3, sample_size::5, total_samples::36, md5::binary-16>>
        ) do
     %FLAC{
-      min_block_size: min_block_size,
-      max_block_size: max_block_size,
-      min_frame_size: min_frame_size,
-      max_frame_size: max_frame_size,
+      min_block_size: min_block_size |> nil_if_unknown(),
+      max_block_size: max_block_size |> nil_if_unknown(),
+      min_frame_size: min_frame_size |> nil_if_unknown(),
+      max_frame_size: max_frame_size |> nil_if_unknown(),
       sample_rate: sample_rate,
       channels: channels + 1,
       sample_size: sample_size + 1,
-      total_samples: total_samples,
-      md5_signature: md5
+      total_samples: total_samples |> nil_if_unknown(),
+      md5_signature: md5 |> nil_if_unknown()
     }
   end
 
@@ -300,6 +300,10 @@ defmodule Membrane.Element.FLACParser.Parser do
     # TODO: Parse other metadata blocks in future
     nil
   end
+
+  defp nil_if_unknown(0), do: nil
+  defp nil_if_unknown(<<0::16*8>>), do: nil
+  defp nil_if_unknown(x), do: x
 
   @spec parse_frame_header(binary(), state()) ::
           :nodata
