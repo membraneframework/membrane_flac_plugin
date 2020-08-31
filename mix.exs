@@ -65,7 +65,7 @@ defmodule Membrane.Element.FLACParser.MixProject do
     [
       {:membrane_core, "~> 0.5.0"},
       {:membrane_caps_audio_flac, "~> 0.1.1"},
-      {:crc, "~> 0.9.2"},
+      {:crc, "~> 0.10"},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0.0-rc.7", only: :dev, runtime: false},
       {:membrane_element_file, "~> 0.3.0", only: :test}
