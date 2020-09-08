@@ -13,7 +13,7 @@ The package can be installed by adding `membrane_element_flac_parser` to your li
 ```elixir
 def deps do
   [
-    {:membrane_element_flac_parser, "~> 0.3"}
+    {:membrane_element_flac_parser, "~> 0.3.1"}
   ]
 end
 ```
