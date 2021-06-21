@@ -39,17 +39,18 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
     src_data = File.read!(in_path)
     out_data = File.read!(out_path)
     assert src_data == out_data
+    assert Pipeline.stop_and_terminate(pid, blocking?: true) == :ok
   end
 
-  defp assert_parsing_failure(filename, streaming?, reason_pattern) do
+  defp assert_parsing_failure(filename, streaming?) do
     {in_path, out_path} = prepare_files(filename)
     assert {:ok, pid} = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
     Process.flag(:trap_exit, true)
     assert Pipeline.play(pid) == :ok
     assert_receive {:EXIT, ^pid, reason}, 3000
-    assert {%RuntimeError{message: msg}, _stacktrace} = reason
-    assert msg =~ reason_pattern
+    assert {:shutdown, :child_crash} = reason
+    assert Pipeline.stop_and_terminate(pid, blocking?: true)
   end
 
   @moduletag :capture_log
@@ -67,10 +68,10 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
   end
 
   test "fail when parsing streamed file (only frames, no headers) without streaming mode" do
-    assert_parsing_failure("only_frames", false, "not_stream")
+    assert_parsing_failure("only_frames", false)
   end
 
   test "fail when parsing file with junk at the end without streaming mode" do
-    assert_parsing_failure("noise_and_junk", false, "invalid_frame")
+    assert_parsing_failure("noise_and_junk", false)
   end
 end
