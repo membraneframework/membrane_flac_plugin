@@ -1,7 +1,7 @@
 defmodule Membrane.Element.FLACParser.MixProject do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.5.0"
   @github_url "https://github.com/membraneframework/membrane-element-flac-parser"
 
   def project do
@@ -63,7 +63,7 @@ defmodule Membrane.Element.FLACParser.MixProject do
 
   defp deps do
     [
-      {:membrane_core, "~> 0.6.0"},
+      {:membrane_core, "~> 0.7.0"},
       {:membrane_caps_audio_flac, "~> 0.1.1"},
       {:crc, "~> 0.10.1"},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false},
