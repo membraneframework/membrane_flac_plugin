@@ -50,7 +50,6 @@ defmodule Membrane.Element.FLACParser.IntegrationTest do
     assert Pipeline.play(pid) == :ok
     assert_receive {:EXIT, ^pid, reason}, 3000
     assert {:shutdown, :child_crash} = reason
-    assert Pipeline.stop_and_terminate(pid, blocking?: true)
   end
 
   @moduletag :capture_log
