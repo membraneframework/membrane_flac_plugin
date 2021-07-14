@@ -33,7 +33,7 @@ defmodule Membrane.FLACParser.Plugin.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md"],
+      extras: ["README.md", "LICENSE"],
       source_ref: "v#{@version}",
       nest_modules_by_prefix: [Membrane.FLACParser],
       before_closing_head_tag: &sidebar_fix/1
