@@ -1,4 +1,4 @@
-defmodule Membrane.Element.FLACParser.Parser do
+defmodule Membrane.FLACParser.Parser do
   @moduledoc """
   Stateful parser based on FLAC format specification available [here](https://xiph.org/flac/format.html#stream)
 

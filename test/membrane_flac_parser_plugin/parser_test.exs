@@ -1,8 +1,8 @@
-defmodule Membrane.Element.FLACParser.ParserTest do
+defmodule Membrane.FLACParser.ParserTest do
   use ExUnit.Case, async: true
   alias Membrane.Buffer
   alias Membrane.Caps.Audio.FLAC
-  alias Membrane.Element.FLACParser.Parser
+  alias Membrane.FLACParser.Parser
 
   defp fixture(file) do
     Path.join([__DIR__, "../fixtures/", file])
