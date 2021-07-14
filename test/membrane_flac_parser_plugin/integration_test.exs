@@ -3,6 +3,7 @@ defmodule ParsingPipeline do
 
   alias Membrane.Testing.Pipeline
 
+  @spec make_pipeline(String.t(), String.t(), boolean(), pid()) :: GenServer.on_start()
   def make_pipeline(in_path, out_path, streaming?, pid \\ self()) do
     Pipeline.start_link(%Pipeline.Options{
       elements: [

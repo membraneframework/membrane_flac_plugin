@@ -85,7 +85,7 @@ defmodule Membrane.FLACParser.ParserTest do
 
     assert {:ok, last_buf} = Parser.flush(state)
 
-    assert state.pos + byte_size(last_buf.payload) == 71189
+    assert state.pos + byte_size(last_buf.payload) == 71_189
 
     parsed_file = Enum.map_join(bufs ++ [last_buf], fn %Buffer{payload: payload} -> payload end)
     assert reference_data == parsed_file
