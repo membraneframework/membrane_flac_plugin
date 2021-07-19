@@ -1,19 +1,19 @@
-defmodule Membrane.FLACParser.Plugin.MixProject do
+defmodule Membrane.FLAC.Plugin.MixProject do
   use Mix.Project
 
   @version "0.5.0"
-  @github_url "https://github.com/membraneframework/membrane_flac_parser_plugin"
+  @github_url "https://github.com/membraneframework/membrane_flac_plugin"
 
   def project do
     [
-      app: :membrane_flac_parser_plugin,
+      app: :membrane_flac_plugin,
       version: @version,
       elixir: "~> 1.7",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       description: "Plugin for parsing FLAC encoded audio stream",
       package: package(),
-      name: "Membrane FlacParser plugin",
+      name: "Membrane FLAC plugin",
       source_url: @github_url,
       docs: docs(),
       homepage_url: "https://membraneframework.org",
