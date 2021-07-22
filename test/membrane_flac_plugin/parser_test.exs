@@ -1,8 +1,8 @@
-defmodule Membrane.FLACParser.ParserTest do
+defmodule Membrane.FLAC.Parser.EngineTest do
   use ExUnit.Case, async: true
   alias Membrane.Buffer
   alias Membrane.Caps.Audio.FLAC
-  alias Membrane.FLACParser.Parser
+  alias Membrane.FLAC.Parser.Engine
 
   defp fixture(file) do
     Path.join([__DIR__, "../fixtures/", file])
@@ -10,8 +10,8 @@ defmodule Membrane.FLACParser.ParserTest do
 
   test "parse noise.flac" do
     data = File.read!(fixture("noise.flac"))
-    assert %Parser{} = Parser.init()
-    assert {:ok, caps_n_bufs, %Parser{} = state} = Parser.parse(data)
+    assert %Engine{} = Engine.init()
+    assert {:ok, caps_n_bufs, %Engine{} = state} = Engine.parse(data)
 
     verify_noise_flac_results(caps_n_bufs, state, data)
   end
@@ -22,8 +22,8 @@ defmodule Membrane.FLACParser.ParserTest do
 
     {caps_n_bufs, state} =
       chunks
-      |> Enum.flat_map_reduce(Parser.init(), fn chunk, state ->
-        assert {:ok, caps_n_bufs, %Parser{} = state} = Parser.parse(chunk, state)
+      |> Enum.flat_map_reduce(Engine.init(), fn chunk, state ->
+        assert {:ok, caps_n_bufs, %Engine{} = state} = Engine.parse(chunk, state)
         {caps_n_bufs, state}
       end)
 
@@ -32,8 +32,8 @@ defmodule Membrane.FLACParser.ParserTest do
 
   test "parse two_meta_blocks.flac" do
     data = File.read!(fixture("two_meta_blocks.flac"))
-    assert %Parser{} = Parser.init()
-    assert {:ok, caps_n_bufs, %Parser{} = state} = Parser.parse(data)
+    assert %Engine{} = Engine.init()
+    assert {:ok, caps_n_bufs, %Engine{} = state} = Engine.parse(data)
 
     assert [%FLAC{} = caps | bufs] = caps_n_bufs
     assert caps.sample_rate == 44_100
@@ -49,7 +49,7 @@ defmodule Membrane.FLACParser.ParserTest do
     # "fLaC" + 2 metadata blocks + 2 frames
     assert bufs |> length() == 5
 
-    assert {:ok, last_buf} = Parser.flush(state)
+    assert {:ok, last_buf} = Engine.flush(state)
 
     assert state.pos + byte_size(last_buf.payload) == byte_size(data)
 
@@ -83,7 +83,7 @@ defmodule Membrane.FLACParser.ParserTest do
       assert meta.sample_size == 16
     end)
 
-    assert {:ok, last_buf} = Parser.flush(state)
+    assert {:ok, last_buf} = Engine.flush(state)
 
     assert state.pos + byte_size(last_buf.payload) == 71_189
 

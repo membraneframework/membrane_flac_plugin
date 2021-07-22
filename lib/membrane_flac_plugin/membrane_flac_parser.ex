@@ -1,13 +1,13 @@
-defmodule Membrane.FLACParser do
+defmodule Membrane.FLAC.Parser do
   @moduledoc """
   An element parsing FLAC encoded audio stream.
 
-  Wraps `Membrane.FLACParser.Parser`, see its docs for more info.
+  Wraps `Membrane.FLAC.Parser.Engine`, see its docs for more info.
   """
   use Membrane.Filter
   alias Membrane.Caps.Audio.FLAC
   alias Membrane.Buffer
-  alias Membrane.FLACParser.Parser
+  alias Membrane.FLAC.Parser.Engine
 
   @initial_demand 1024
 
@@ -34,7 +34,7 @@ defmodule Membrane.FLACParser do
 
   @impl true
   def handle_stopped_to_prepared(_ctx, %{streaming?: streaming?} = state) do
-    state = %{state | parser: Parser.init(streaming?)}
+    state = %{state | parser: Engine.init(streaming?)}
     {:ok, state}
   end
 
@@ -46,7 +46,7 @@ defmodule Membrane.FLACParser do
 
   @impl true
   def handle_process(:input, %Buffer{payload: payload}, _ctx, %{parser: parser} = state) do
-    with {:ok, results, parser} <- Parser.parse(payload, parser) do
+    with {:ok, results, parser} <- Engine.parse(payload, parser) do
       actions =
         results
         |> Enum.map(fn
@@ -80,7 +80,7 @@ defmodule Membrane.FLACParser do
 
   @impl true
   def handle_end_of_stream(:input, _ctx, state) do
-    {:ok, buffer} = Parser.flush(state.parser)
+    {:ok, buffer} = Engine.flush(state.parser)
 
     actions = [
       buffer: {:output, buffer},

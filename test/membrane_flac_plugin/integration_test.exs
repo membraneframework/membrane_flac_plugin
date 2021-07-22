@@ -8,7 +8,7 @@ defmodule ParsingPipeline do
     Pipeline.start_link(%Pipeline.Options{
       elements: [
         file_src: %Membrane.File.Source{location: in_path},
-        parser: %Membrane.FLACParser{streaming?: streaming?},
+        parser: %Membrane.FLAC.Parser{streaming?: streaming?},
         sink: %Membrane.File.Sink{location: out_path}
       ],
       test_process: pid
@@ -16,7 +16,7 @@ defmodule ParsingPipeline do
   end
 end
 
-defmodule Membrane.FLACParser.IntegrationTest do
+defmodule Membrane.FLAC.Parser.IntegrationTest do
   use ExUnit.Case
   import Membrane.Testing.Assertions
   alias Membrane.Pipeline

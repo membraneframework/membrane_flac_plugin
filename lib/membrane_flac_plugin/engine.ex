@@ -1,4 +1,4 @@
-defmodule Membrane.FLACParser.Parser do
+defmodule Membrane.FLAC.Parser.Engine do
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
   @moduledoc """
   Stateful parser based on FLAC format specification available [here](https://xiph.org/flac/format.html#stream)
