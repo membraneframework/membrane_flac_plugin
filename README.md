@@ -14,7 +14,7 @@ The package can be installed by adding `membrane_flac_plugin` to your list of de
 ```elixir
 def deps do
   [
-    {:membrane_flac_plugin, "~> 0.6.0"}
+    {:membrane_flac_plugin, "~> 0.7.0"}
   ]
 end
 ```
