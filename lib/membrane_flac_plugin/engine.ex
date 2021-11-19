@@ -71,7 +71,7 @@ defmodule Membrane.FLAC.Parser.Engine do
 
   The call without `state` provided is an equivalent of using `init/0` as `state`
   """
-  @spec parse(binary(), state()) :: {:ok, [Caps.t() | Buffer.t()], state()}
+  @spec parse(binary(), state()) :: {:ok, [Caps.t() | Buffer.t()], state()} | {:error, any()}
   def parse(binary_data, state \\ init())
 
   def parse(binary_data, %{queue: queue, continue: continue} = state) do

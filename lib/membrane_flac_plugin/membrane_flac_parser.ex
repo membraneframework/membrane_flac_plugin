@@ -46,17 +46,19 @@ defmodule Membrane.FLAC.Parser do
 
   @impl true
   def handle_process(:input, %Buffer{payload: payload}, _ctx, %{parser: parser} = state) do
-    with {:ok, results, parser} <- Engine.parse(payload, parser) do
-      actions =
-        results
-        |> Enum.map(fn
-          %FLAC{} = caps -> {:caps, {:output, caps}}
-          %Buffer{} = buf -> {:buffer, {:output, buf}}
-        end)
+    case Engine.parse(payload, parser) do
+      {:ok, results, parser} ->
+        actions =
+          results
+          |> Enum.map(fn
+            %FLAC{} = caps -> {:caps, {:output, caps}}
+            %Buffer{} = buf -> {:buffer, {:output, buf}}
+          end)
 
-      {{:ok, actions ++ [redemand: :output]}, %{state | parser: parser}}
-    else
-      {:error, reason} -> raise "Parsing error: #{inspect(reason)}"
+        {{:ok, actions ++ [redemand: :output]}, %{state | parser: parser}}
+
+      {:error, reason} ->
+        raise "Parsing error: #{inspect(reason)}"
     end
   end
 
