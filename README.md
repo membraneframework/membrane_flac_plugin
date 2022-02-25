@@ -19,6 +19,34 @@ def deps do
 end
 ```
 
+## Usage
+```elixir
+defmodule Membrane.Demo.FlacPipeline do
+  use Membrane.Pipeline
+
+  @impl true
+  def handle_init(_opts) do
+    children = %{
+      file: %Membrane.File.Source{location: "sample.flac"},
+      parser: %Membrane.FLAC.Parser{streaming?: false},
+      sink: %Membrane.File.Sink{location: "out.flac"}
+    }
+
+    links = [
+      link(:file) |> to(:parser) |> to(:sink)
+    ]
+
+    {{:ok, spec: %ParentSpec{children: children, links: links}}, %{}}
+  end
+end
+```
+
+Dependencies for the example above:
+```elixir
+  {:membrane_file_plugin, "~> 0.7.0"},
+  {:membrane_flac_plugin, "~> 0.7.0"}
+```
+
 ## Sponsors
 
 This project is sponsored by [Abridge AI, Inc.](https://abridge.com)
