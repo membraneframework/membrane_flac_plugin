@@ -19,6 +19,44 @@ def deps do
 end
 ```
 
+## Usage example
+
+```elixir
+defmodule Membrane.Demo.FlacPipeline do
+  use Membrane.Pipeline
+  alias Membrane.{Fake}
+  @impl true
+  def handle_init(_opts) do
+    children = %{
+      file: %Membrane.File.Source{location: "sample.flac"},
+      parser: %Membrane.FLAC.Parser{streaming?: false},
+      fake_sink: Fake.Sink.Buffers
+    }
+    links = [
+      link(:file)
+      |> to(:parser)
+      # There you can do something with the parsed data
+      |> to(:fake_sink)
+    ]
+    {{:ok, spec: %ParentSpec{children: children, links: links}}, %{}}
+  end
+end
+```
+
+To run the example:
+```elixir
+alias Membrane.Demo.FlacPipeline
+{:ok, pid} = FlacPipeline.start_link("sample.flac")
+FlacPipeline.play(pid)
+```
+
+Dependencies for the example above:
+```elixir
+  {:membrane_file_plugin, "~> 0.7.0"},
+  {:membrane_fake_plugin, "~> 0.7.0"},
+  {:membrane_flac_plugin, "~> 0.7.0"}
+```
+
 ## Sponsors
 
 This project is sponsored by [Abridge AI, Inc.](https://abridge.com)
