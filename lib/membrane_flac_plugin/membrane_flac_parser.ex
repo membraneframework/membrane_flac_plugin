@@ -8,15 +8,16 @@ defmodule Membrane.FLAC.Parser do
   alias Membrane.Caps.Audio.FLAC
   alias Membrane.Buffer
   alias Membrane.FLAC.Parser.Engine
-
-  @initial_demand 1024
+  alias Membrane.Caps.Matcher
 
   def_output_pad :output,
-    caps: FLAC
+    caps: FLAC,
+    demand_mode: :auto
 
   def_input_pad :input,
-    caps: :any,
-    demand_unit: :bytes
+    caps: {Membrane.RemoteStream, content_format: Matcher.one_of([FLAC, nil])},
+    demand_unit: :bytes,
+    demand_mode: :auto
 
   def_options streaming?: [
                 description: """
@@ -33,13 +34,18 @@ defmodule Membrane.FLAC.Parser do
   end
 
   @impl true
-  def handle_stopped_to_prepared(_ctx, %{streaming?: streaming?} = state) do
+  def handle_prepared_to_playing(_ctx, %{streaming?: streaming?} = state) do
     state = %{state | parser: Engine.init(streaming?)}
     {:ok, state}
   end
 
   @impl true
-  def handle_prepared_to_stopped(_ctx, state) do
+  def handle_caps(:input, _caps, _ctx, state) do
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_playing_to_prepared(_ctx, state) do
     state = %{state | parser: nil}
     {:ok, state}
   end
@@ -55,29 +61,11 @@ defmodule Membrane.FLAC.Parser do
             %Buffer{} = buf -> {:buffer, {:output, buf}}
           end)
 
-        {{:ok, actions ++ [redemand: :output]}, %{state | parser: parser}}
+        {{:ok, actions}, %{state | parser: parser}}
 
       {:error, reason} ->
         raise "Parsing error: #{inspect(reason)}"
     end
-  end
-
-  @impl true
-  def handle_demand(:output, size, :bytes, _ctx, state) do
-    {{:ok, demand: {:input, size}}, state}
-  end
-
-  def handle_demand(:output, size, :buffers, ctx, state) do
-    caps = ctx.pads.output.caps
-
-    demand =
-      if caps != nil and caps.max_frame_size != nil do
-        caps.max_frame_size * size
-      else
-        @initial_demand * size
-      end
-
-    {{:ok, demand: {:input, demand}}, state}
   end
 
   @impl true

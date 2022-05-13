@@ -8,7 +8,7 @@ defmodule Membrane.FLAC.Plugin.MixProject do
     [
       app: :membrane_flac_plugin,
       version: @version,
-      elixir: "~> 1.7",
+      elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       description: "Plugin for parsing FLAC encoded audio stream",
@@ -63,13 +63,13 @@ defmodule Membrane.FLAC.Plugin.MixProject do
 
   defp deps do
     [
-      {:membrane_core, "~> 0.8.0"},
+      {:membrane_core, "~> 0.10.0"},
       {:membrane_caps_audio_flac, "~> 0.1.1"},
-      {:crc, "~> 0.10.1"},
-      {:ex_doc, "~> 0.19", only: :dev, runtime: false},
-      {:credo, "~> 1.4", only: :dev, runtime: false},
-      {:dialyxir, "~> 1.1.0", only: :dev, runtime: false},
-      {:membrane_file_plugin, "~> 0.7.0", only: :test}
+      {:crc, "~> 0.10.4"},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:credo, ">= 0.0.0", only: :dev, runtime: false},
+      {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
+      {:membrane_file_plugin, "~> 0.12.0", only: :test}
     ]
   end
 end

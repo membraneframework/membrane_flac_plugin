@@ -155,7 +155,7 @@ defmodule Membrane.FLAC.Parser.Engine do
   # no frame parsed yet
   defp do_parse(
          :frame,
-         <<@frame_start, blocking_strategy::1, _::binary>> = data,
+         <<@frame_start, blocking_strategy::1, _rest::binary>> = data,
          acc,
          %{blocking_strategy: nil} = state
        ) do
@@ -167,7 +167,7 @@ defmodule Membrane.FLAC.Parser.Engine do
   # no full header parsed yet
   defp do_parse(
          :frame,
-         <<@frame_start, blocking_strategy::1, _::binary>> = data,
+         <<@frame_start, blocking_strategy::1, _rest::binary>> = data,
          acc,
          %{blocking_strategy: blocking_strategy, current_metadata: nil} = state
        ) do
@@ -194,7 +194,7 @@ defmodule Membrane.FLAC.Parser.Engine do
 
   defp do_parse(
          :frame,
-         <<@frame_start, blocking_strategy::1, _::binary>> = data,
+         <<@frame_start, blocking_strategy::1, _rest::binary>> = data,
          acc,
          %{blocking_strategy: blocking_strategy, current_metadata: current_metadata, pos: pos} =
            state
@@ -332,7 +332,7 @@ defmodule Membrane.FLAC.Parser.Engine do
          {:ok, sample_rate, rest} <- decode_sample_rate(sample_rate, rest, state),
          header_size = byte_size(data) - byte_size(rest),
          <<crc8::8, _rest::binary>> <- if(rest == <<>>, do: :nodata, else: rest),
-         <<header::binary-size(header_size), _::binary>> = data,
+         <<header::binary-size(header_size), _body::binary>> = data,
          :ok <- verify_crc(header, crc8) do
       sample_number =
         case {blocking_strategy, state.caps} do
