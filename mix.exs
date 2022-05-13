@@ -17,7 +17,8 @@ defmodule Membrane.FLAC.Plugin.MixProject do
       source_url: @github_url,
       docs: docs(),
       homepage_url: "https://membraneframework.org",
-      deps: deps()
+      deps: deps(),
+      dialyzer: dialyzer()
     ]
   end
 
@@ -34,6 +35,7 @@ defmodule Membrane.FLAC.Plugin.MixProject do
     [
       main: "readme",
       extras: ["README.md", "LICENSE"],
+      formatters: ["html"],
       source_ref: "v#{@version}",
       nest_modules_by_prefix: [Membrane.FLAC.Parser],
       before_closing_head_tag: &sidebar_fix/1
@@ -71,5 +73,18 @@ defmodule Membrane.FLAC.Plugin.MixProject do
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
       {:membrane_file_plugin, "~> 0.12.0", only: :test}
     ]
+  end
+
+  defp dialyzer() do
+    opts = [
+      flags: [:error_handling]
+    ]
+
+    if System.get_env("CI") == "true" do
+      # Store PLTs in cacheable directory for CI
+      [plt_local_path: "priv/plts", plt_core_path: "priv/plts"] ++ opts
+    else
+      opts
+    end
   end
 end
