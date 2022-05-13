@@ -5,10 +5,10 @@ defmodule Membrane.FLAC.Parser do
   Wraps `Membrane.FLAC.Parser.Engine`, see its docs for more info.
   """
   use Membrane.Filter
-  alias Membrane.Caps.Audio.FLAC
   alias Membrane.Buffer
-  alias Membrane.FLAC.Parser.Engine
+  alias Membrane.Caps.Audio.FLAC
   alias Membrane.Caps.Matcher
+  alias Membrane.FLAC.Parser.Engine
 
   def_output_pad :output,
     caps: FLAC,
