@@ -5,14 +5,16 @@ defmodule ParsingPipeline do
 
   @spec make_pipeline(String.t(), String.t(), boolean(), pid()) :: GenServer.on_start()
   def make_pipeline(in_path, out_path, streaming?, pid \\ self()) do
-    Pipeline.start_link(%Pipeline.Options{
-      elements: [
-        file_src: %Membrane.File.Source{location: in_path},
-        parser: %Membrane.FLAC.Parser{streaming?: streaming?},
-        sink: %Membrane.File.Sink{location: out_path}
-      ],
+    children = [
+      file_src: %Membrane.File.Source{location: in_path},
+      parser: %Membrane.FLAC.Parser{streaming?: streaming?},
+      sink: %Membrane.File.Sink{location: out_path}
+    ]
+
+    Pipeline.start_link(
+      links: Membrane.ParentSpec.link_linear(children),
       test_process: pid
-    })
+    )
   end
 end
 
@@ -33,22 +35,19 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
     {in_path, out_path} = prepare_files(filename)
     assert {:ok, pid} = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
-    # Start the pipeline
-    assert Pipeline.play(pid) == :ok
     # Wait for EndOfStream message
     assert_end_of_stream(pid, :sink, :input, 3000)
     src_data = File.read!(in_path)
     out_data = File.read!(out_path)
     assert src_data == out_data
-    assert Pipeline.stop_and_terminate(pid, blocking?: true) == :ok
+    assert Pipeline.terminate(pid, blocking?: true) == :ok
   end
 
   defp assert_parsing_failure(filename, streaming?) do
     {in_path, out_path} = prepare_files(filename)
+    Process.flag(:trap_exit, true)
     assert {:ok, pid} = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
-    Process.flag(:trap_exit, true)
-    assert Pipeline.play(pid) == :ok
     assert_receive {:EXIT, ^pid, reason}, 3000
     assert {:shutdown, :child_crash} = reason
   end
