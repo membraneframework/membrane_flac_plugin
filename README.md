@@ -27,18 +27,12 @@ defmodule Membrane.Demo.FlacPipeline do
   alias Membrane.{Fake}
   @impl true
   def handle_init(_opts) do
-    children = %{
-      file: %Membrane.File.Source{location: "sample.flac"},
-      parser: %Membrane.FLAC.Parser{streaming?: false},
-      fake_sink: Fake.Sink.Buffers
-    }
     links = [
-      link(:file)
-      |> to(:parser)
-      # There you can do something with the parsed data
-      |> to(:fake_sink)
+      child(:file, %Membrane.File.Source{location: "sample.flac"})
+      |> child(:parser, %Membrane.FLAC.Parser{streaming?: false})
+      |> child(:fake_sink, Fake.Sink.Buffers)
     ]
-    {{:ok, spec: %ParentSpec{children: children, links: links}}, %{}}
+    {[spec: links], %{}}
   end
 end
 ```
@@ -52,9 +46,9 @@ FlacPipeline.play(pid)
 
 Dependencies for the example above:
 ```elixir
-  {:membrane_file_plugin, "~> 0.7.0"},
-  {:membrane_fake_plugin, "~> 0.7.0"},
-  {:membrane_flac_plugin, "~> 0.7.0"}
+  {:membrane_file_plugin, "~> 0.13.0"},
+  {:membrane_fake_plugin, "~> 0.8.0"},
+  {:membrane_flac_plugin, "~> 0.8.0"}
 ```
 
 ## Sponsors
