@@ -13,7 +13,7 @@ defmodule ParsingPipeline do
       |> child(:sink, %Membrane.File.Sink{location: out_path})
     ]
 
-    Pipeline.start_link(
+    Pipeline.start_link_supervised!(
       structure: links,
       test_process: pid
     )
@@ -36,8 +36,7 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
   defp assert_parsing_success(filename, streaming?) do
     {in_path, out_path} = prepare_files(filename)
 
-    assert {:ok, _supervisor_pid, pid} =
-             ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
+    assert pid = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
     # Wait for EndOfStream message
     assert_end_of_stream(pid, :sink, :input, 3000)
@@ -51,10 +50,9 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
     {in_path, out_path} = prepare_files(filename)
     Process.flag(:trap_exit, true)
 
-    assert {:ok, supervisor_pid, _pid} =
-             ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
+    assert pid = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
-    assert_receive {:EXIT, ^supervisor_pid, reason}, 3000
+    assert_receive {:EXIT, ^pid, reason}, 3000
     assert {:shutdown, :child_crash} = reason
   end
 

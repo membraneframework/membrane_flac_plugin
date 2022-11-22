@@ -24,7 +24,7 @@ defmodule Membrane.FLAC.Parser do
                 e.g. only frames without header
                 """,
                 default: false,
-                type: :boolean
+                spec: boolean()
               ]
 
   @impl true
