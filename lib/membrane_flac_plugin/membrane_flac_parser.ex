@@ -7,15 +7,14 @@ defmodule Membrane.FLAC.Parser do
   use Membrane.Filter
   alias Membrane.Buffer
   alias Membrane.Caps.Audio.FLAC
-  alias Membrane.Caps.Matcher
   alias Membrane.FLAC.Parser.Engine
 
   def_output_pad :output,
-    caps: FLAC,
+    accepted_format: FLAC,
     demand_mode: :auto
 
   def_input_pad :input,
-    caps: {Membrane.RemoteStream, content_format: Matcher.one_of([FLAC, nil])},
+    accepted_format: %Membrane.RemoteStream{content_format: format} when format in [FLAC, nil],
     demand_unit: :bytes,
     demand_mode: :auto
 
@@ -25,29 +24,23 @@ defmodule Membrane.FLAC.Parser do
                 e.g. only frames without header
                 """,
                 default: false,
-                type: :boolean
+                spec: boolean()
               ]
 
   @impl true
-  def handle_init(opts) do
-    {:ok, opts |> Map.from_struct() |> Map.merge(%{parser: nil})}
+  def handle_init(_ctx, opts) do
+    {[], opts |> Map.from_struct() |> Map.merge(%{parser: nil})}
   end
 
   @impl true
-  def handle_prepared_to_playing(_ctx, %{streaming?: streaming?} = state) do
+  def handle_playing(_ctx, %{streaming?: streaming?} = state) do
     state = %{state | parser: Engine.init(streaming?)}
-    {:ok, state}
+    {[], state}
   end
 
   @impl true
-  def handle_caps(:input, _caps, _ctx, state) do
-    {:ok, state}
-  end
-
-  @impl true
-  def handle_playing_to_prepared(_ctx, state) do
-    state = %{state | parser: nil}
-    {:ok, state}
+  def handle_stream_format(:input, _caps, _ctx, state) do
+    {[], state}
   end
 
   @impl true
@@ -57,11 +50,11 @@ defmodule Membrane.FLAC.Parser do
         actions =
           results
           |> Enum.map(fn
-            %FLAC{} = caps -> {:caps, {:output, caps}}
+            %FLAC{} = caps -> {:stream_format, {:output, caps}}
             %Buffer{} = buf -> {:buffer, {:output, buf}}
           end)
 
-        {{:ok, actions}, %{state | parser: parser}}
+        {actions, %{state | parser: parser}}
 
       {:error, reason} ->
         raise "Parsing error: #{inspect(reason)}"
@@ -75,9 +68,9 @@ defmodule Membrane.FLAC.Parser do
     actions = [
       buffer: {:output, buffer},
       end_of_stream: :output,
-      notify: {:end_of_stream, :input}
+      notify_parent: {:end_of_stream, :input}
     ]
 
-    {{:ok, actions}, state}
+    {actions, state}
   end
 end

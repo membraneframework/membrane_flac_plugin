@@ -16,7 +16,7 @@ defmodule Membrane.FLAC.Parser.Engine do
   The parser returns a frame once it encounters a beginning of the next one since there's no other
   way to determine where the frame ends.
   """
-  alias Membrane.{Buffer, Caps}
+  alias Membrane.{Buffer, StreamFormat}
   alias Membrane.Caps.Audio.FLAC
 
   @frame_start <<0b111111111111100::15>>
@@ -71,7 +71,8 @@ defmodule Membrane.FLAC.Parser.Engine do
 
   The call without `state` provided is an equivalent of using `init/0` as `state`
   """
-  @spec parse(binary(), state()) :: {:ok, [Caps.t() | Buffer.t()], state()} | {:error, any()}
+  @spec parse(binary(), state()) ::
+          {:ok, [StreamFormat.t() | Buffer.t()], state()} | {:error, any()}
   def parse(binary_data, state \\ init())
 
   def parse(binary_data, %{queue: queue, continue: continue} = state) do
@@ -435,12 +436,12 @@ defmodule Membrane.FLAC.Parser.Engine do
   end
 
   defp decode_block_size(block_size, rest) when block_size in 0b0010..0b0101 do
-    use Bitwise
+    import Bitwise
     {:ok, 576 <<< (block_size - 2), rest}
   end
 
   defp decode_block_size(block_size, rest) when block_size in 0b1000..0b1111 do
-    use Bitwise
+    import Bitwise
     {:ok, 1 <<< block_size, rest}
   end
 
