@@ -1,7 +1,7 @@
 defmodule Membrane.FLAC.Plugin.MixProject do
   use Mix.Project
 
-  @version "0.9.0"
+  @version "0.10.0"
   @github_url "https://github.com/membraneframework/membrane_flac_plugin"
 
   def project do
@@ -65,7 +65,7 @@ defmodule Membrane.FLAC.Plugin.MixProject do
 
   defp deps do
     [
-      {:membrane_core, "~> 0.11.0"},
+      {:membrane_core, "~> 0.12.0"},
       {:membrane_caps_audio_flac, "~> 0.1.1"},
       {:crc, "~> 0.10.4"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
