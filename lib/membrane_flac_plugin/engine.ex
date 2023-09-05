@@ -4,11 +4,11 @@ defmodule Membrane.FLAC.Parser.Engine do
   Stateful parser based on FLAC format specification available [here](https://xiph.org/flac/format.html#stream)
 
   The parser outputs:
-  1. `Membrane.Caps.Audio.FLAC`
+  1. `Membrane.FLAC`
   2. `Membrane.Buffer` with "fLaC" - the FLAC stream marker in ASCII
   3. At least one `Membrane.Buffer` with metadata block(s)
   4. `Membrane.Buffer`s containing one frame each, with decoded metadata from its header
-     (as `Membrane.Caps.Audio.FLAC.FrameMetadata` struct)
+     (as `Membrane.FLAC.FrameMetadata` struct)
 
   The parsing is done by calling `init/0` and than `parse/2` with the data to parse.
   The last buffer can be obtained by calling `flush/1`
@@ -16,8 +16,7 @@ defmodule Membrane.FLAC.Parser.Engine do
   The parser returns a frame once it encounters a beginning of the next one since there's no other
   way to determine where the frame ends.
   """
-  alias Membrane.{Buffer, StreamFormat}
-  alias Membrane.Caps.Audio.FLAC
+  alias Membrane.{Buffer, FLAC, StreamFormat}
 
   @frame_start <<0b111111111111100::15>>
   @frame_start_size byte_size(@frame_start)
@@ -43,7 +42,7 @@ defmodule Membrane.FLAC.Parser.Engine do
             queue: binary(),
             continue: atom(),
             pos: non_neg_integer(),
-            caps: %FLAC{} | nil,
+            format: %FLAC{} | nil,
             blocking_strategy: 0 | 1 | nil,
             current_metadata: FLAC.FrameMetadata.t() | nil
           }
@@ -51,7 +50,7 @@ defmodule Membrane.FLAC.Parser.Engine do
   defstruct queue: "",
             continue: :stream,
             pos: 0,
-            caps: nil,
+            format: nil,
             blocking_strategy: nil,
             current_metadata: nil,
             streaming?: false
@@ -65,7 +64,7 @@ defmodule Membrane.FLAC.Parser.Engine do
   end
 
   @doc """
-  Parses FLAC stream, splitting it into `Membrane.Buffer`s and providing caps.
+  Parses FLAC stream, splitting it into `Membrane.Buffer`s and providing format.
 
   See moduledoc (`#{inspect(__MODULE__)}`) for more info
 
@@ -122,12 +121,12 @@ defmodule Membrane.FLAC.Parser.Engine do
     payload = binary_part(data, 0, 4 + size)
     buf = %Buffer{payload: payload}
 
-    caps = decode_metadata_block(type, block)
+    format = decode_metadata_block(type, block)
 
     {acc, state} =
-      case caps do
+      case format do
         nil -> {[buf | acc], state}
-        caps -> {[buf | acc] ++ [caps], %{state | caps: caps}}
+        format -> {[buf | acc] ++ [format], %{state | format: format}}
       end
 
     state = %{state | pos: pos + byte_size(payload)}
@@ -148,7 +147,7 @@ defmodule Membrane.FLAC.Parser.Engine do
     {:ok, acc, %{state | queue: data, continue: :frame}}
   end
 
-  defp do_parse(:frame, data, acc, %{caps: %{min_frame_size: min_frame_size}} = state)
+  defp do_parse(:frame, data, acc, %{format: %{min_frame_size: min_frame_size}} = state)
        when min_frame_size != nil and byte_size(data) < min_frame_size do
     {:ok, acc, %{state | queue: data, continue: :frame}}
   end
@@ -181,10 +180,10 @@ defmodule Membrane.FLAC.Parser.Engine do
 
       {:ok, metadata} ->
         {acc, state} =
-          if state.streaming? and state.caps == nil do
-            # header haven't beeen parsed, so we need to generate caps from metadata
-            caps = caps_from_metadata(blocking_strategy, metadata)
-            {acc ++ [caps], %{state | caps: caps}}
+          if state.streaming? and state.format == nil do
+            # header haven't beeen parsed, so we need to generate format from metadata
+            format = format_from_metadata(blocking_strategy, metadata)
+            {acc ++ [format], %{state | format: format}}
           else
             {acc, state}
           end
@@ -202,10 +201,10 @@ defmodule Membrane.FLAC.Parser.Engine do
        ) do
     # TODO: include position in queue to prevent scanning the same bytes
     # Skip at least frame_start
-    search_start = max(@frame_start_size, state.caps.min_frame_size || 0)
+    search_start = max(@frame_start_size, state.format.min_frame_size || 0)
 
     search_end =
-      case state.caps.max_frame_size do
+      case state.format.max_frame_size do
         nil -> byte_size(data)
         max_frame_size -> min(byte_size(data), max_frame_size + @frame_start_size)
       end
@@ -239,14 +238,14 @@ defmodule Membrane.FLAC.Parser.Engine do
     {:error, {:invalid_frame, pos: state.pos}}
   end
 
-  defp caps_from_metadata(blocking_strategy, metadata) do
+  defp format_from_metadata(blocking_strategy, metadata) do
     keys = metadata |> Map.take([:sample_rate, :channels, :sample_size])
-    caps = struct!(FLAC, keys)
+    format = struct!(FLAC, keys)
 
     if blocking_strategy == @blocking_stg_fixed do
-      %{caps | min_block_size: metadata.samples, max_block_size: metadata.samples}
+      %{format | min_block_size: metadata.samples, max_block_size: metadata.samples}
     else
-      caps
+      format
     end
   end
 
@@ -336,15 +335,15 @@ defmodule Membrane.FLAC.Parser.Engine do
          <<header::binary-size(header_size), _body::binary>> = data,
          :ok <- verify_crc(header, crc8) do
       sample_number =
-        case {blocking_strategy, state.caps} do
+        case {blocking_strategy, state.format} do
           {@blocking_stg_fixed, nil} -> number * block_size
-          {@blocking_stg_fixed, caps} -> number * caps.min_block_size
+          {@blocking_stg_fixed, format} -> number * format.min_block_size
           {@blocking_stg_variable, _} -> number
         end
 
       sample_size =
         case sample_size do
-          0b000 -> state.caps.sample_size
+          0b000 -> state.format.sample_size
           0b001 -> 8
           0b010 -> 12
           0b100 -> 16
@@ -381,13 +380,13 @@ defmodule Membrane.FLAC.Parser.Engine do
     {:error, {:invalid_header, pos: state.pos}}
   end
 
-  defp metadata_valid?(_metadata, %{caps: nil, current_metadata: nil, streaming?: true}) do
+  defp metadata_valid?(_metadata, %{format: nil, current_metadata: nil, streaming?: true}) do
     # First parsed metadata from the middle of stream
     # there's no way to verify anything
     true
   end
 
-  defp metadata_valid?(metadata, %{caps: caps, current_metadata: last_meta}) do
+  defp metadata_valid?(metadata, %{format: format, current_metadata: last_meta}) do
     expected_sample_number =
       case last_meta do
         nil ->
@@ -398,10 +397,10 @@ defmodule Membrane.FLAC.Parser.Engine do
       end
 
     metadata.starting_sample_number == expected_sample_number and
-      metadata.channels == caps.channels and
-      metadata.sample_rate == caps.sample_rate and
-      metadata.sample_size == caps.sample_size and
-      (caps.max_block_size == nil or metadata.samples <= caps.max_block_size)
+      metadata.channels == format.channels and
+      metadata.sample_rate == format.sample_rate and
+      metadata.sample_size == format.sample_size and
+      (format.max_block_size == nil or metadata.samples <= format.max_block_size)
 
     # cannot test for min_block_size because last frame in fixed blocking strategy
     # is smaller than rest
@@ -477,7 +476,7 @@ defmodule Membrane.FLAC.Parser.Engine do
   defp decode_sample_rate(raw_sample_rate, rest, state) do
     sample_rate =
       case raw_sample_rate do
-        0b0000 -> state.caps.sample_rate
+        0b0000 -> state.format.sample_rate
         0b0001 -> 88_200
         0b0010 -> 176_400
         0b0011 -> 192_000

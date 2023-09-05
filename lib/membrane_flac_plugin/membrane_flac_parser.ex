@@ -5,8 +5,7 @@ defmodule Membrane.FLAC.Parser do
   Wraps `Membrane.FLAC.Parser.Engine`, see its docs for more info.
   """
   use Membrane.Filter
-  alias Membrane.Buffer
-  alias Membrane.Caps.Audio.FLAC
+  alias Membrane.{Buffer, FLAC}
   alias Membrane.FLAC.Parser.Engine
 
   def_output_pad :output,
@@ -39,7 +38,7 @@ defmodule Membrane.FLAC.Parser do
   end
 
   @impl true
-  def handle_stream_format(:input, _caps, _ctx, state) do
+  def handle_stream_format(:input, _format, _ctx, state) do
     {[], state}
   end
 
@@ -50,7 +49,7 @@ defmodule Membrane.FLAC.Parser do
         actions =
           results
           |> Enum.map(fn
-            %FLAC{} = caps -> {:stream_format, {:output, caps}}
+            %FLAC{} = format -> {:stream_format, {:output, format}}
             %Buffer{} = buf -> {:buffer, {:output, buf}}
           end)
 

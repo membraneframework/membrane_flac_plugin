@@ -66,7 +66,7 @@ defmodule Membrane.FLAC.Plugin.MixProject do
   defp deps do
     [
       {:membrane_core, "~> 0.12.0"},
-      {:membrane_caps_audio_flac, "~> 0.1.1"},
+      {:membrane_flac_format, "~> 0.2.0"},
       {:crc, "~> 0.10.4"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:credo, ">= 0.0.0", only: :dev, runtime: false},
