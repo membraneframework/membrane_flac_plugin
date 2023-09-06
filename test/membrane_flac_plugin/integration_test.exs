@@ -53,7 +53,7 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
     assert pid = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
     assert_receive {:EXIT, ^pid, reason}, 3000
-    assert {:shutdown, :child_crash} = reason
+    assert {:membrane_child_crash, :parser} = reason
   end
 
   @moduletag :capture_log
