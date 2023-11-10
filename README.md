@@ -48,7 +48,7 @@ Dependencies for the example above:
 ```elixir
   {:membrane_file_plugin, "~> 0.14.0"},
   {:membrane_fake_plugin, "~> 0.10.0"},
-	{:membrane_flac_plugin, "~> 0.11.0"}
+  {:membrane_flac_plugin, "~> 0.11.0"}
 ```
 
 ## Sponsors
