@@ -14,7 +14,7 @@ defmodule ParsingPipeline do
     ]
 
     Pipeline.start_link_supervised!(
-      structure: links,
+      spec: links,
       test_process: pid
     )
   end
@@ -43,7 +43,7 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
     src_data = File.read!(in_path)
     out_data = File.read!(out_path)
     assert src_data == out_data
-    assert Pipeline.terminate(pid, blocking?: true) == :ok
+    assert Pipeline.terminate(pid) == :ok
   end
 
   defp assert_parsing_failure(filename, streaming?) do
@@ -53,7 +53,11 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
     assert pid = ParsingPipeline.make_pipeline(in_path, out_path, streaming?)
 
     assert_receive {:EXIT, ^pid, reason}, 3000
-    assert {:membrane_child_crash, :parser} = reason
+
+    assert {:membrane_child_crash, :parser, {%RuntimeError{message: message}, _stacktrace}} =
+             reason
+
+    assert String.starts_with?(message, "Parsing error")
   end
 
   @moduletag :capture_log

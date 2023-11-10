@@ -8,14 +8,10 @@ defmodule Membrane.FLAC.Parser do
   alias Membrane.{Buffer, FLAC}
   alias Membrane.FLAC.Parser.Engine
 
-  def_output_pad :output,
-    accepted_format: FLAC,
-    demand_mode: :auto
+  def_output_pad :output, accepted_format: FLAC
 
   def_input_pad :input,
-    accepted_format: %Membrane.RemoteStream{content_format: format} when format in [FLAC, nil],
-    demand_unit: :bytes,
-    demand_mode: :auto
+    accepted_format: %Membrane.RemoteStream{content_format: format} when format in [FLAC, nil]
 
   def_options streaming?: [
                 description: """
@@ -43,7 +39,7 @@ defmodule Membrane.FLAC.Parser do
   end
 
   @impl true
-  def handle_process(:input, %Buffer{payload: payload}, _ctx, %{parser: parser} = state) do
+  def handle_buffer(:input, %Buffer{payload: payload}, _ctx, %{parser: parser} = state) do
     case Engine.parse(payload, parser) do
       {:ok, results, parser} ->
         actions =
