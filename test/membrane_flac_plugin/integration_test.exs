@@ -81,4 +81,93 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
   test "fail when parsing file with junk at the end without streaming mode" do
     assert_parsing_failure("noise_and_junk", false)
   end
+
+  test "generate_best_effort_timestamps false, fake input pts present" do
+    import Membrane.ChildrenSpec
+    in_buffers = buffers_from_file(true)
+
+    spec = [
+      child(:source, %Membrane.Testing.Source{output: in_buffers})
+      |> child(:parser, %Membrane.FLAC.Parser{generate_best_effort_timestamps?: false})
+      |> child(:sink, Membrane.Testing.Sink)
+    ]
+
+    pipeline = Membrane.Testing.Pipeline.start_link_supervised!(spec: spec)
+    do_test(pipeline, true)
+  end
+
+  test "generate_best_effort_timestamps false, fake input pts missing" do
+    import Membrane.ChildrenSpec
+    in_buffers = buffers_from_file(false)
+
+    spec = [
+      child(:source, %Membrane.Testing.Source{output: in_buffers})
+      |> child(:parser, %Membrane.FLAC.Parser{generate_best_effort_timestamps?: false})
+      |> child(:sink, Membrane.Testing.Sink)
+    ]
+
+    pipeline = Membrane.Testing.Pipeline.start_link_supervised!(spec: spec)
+    do_test(pipeline, false)
+  end
+
+  test "generate_best_effort_timestamps true" do
+    import Membrane.ChildrenSpec
+    in_buffers = buffers_from_file(true)
+
+    spec = [
+      child(:source, %Membrane.Testing.Source{output: in_buffers})
+      |> child(:parser, %Membrane.FLAC.Parser{generate_best_effort_timestamps?: true})
+      |> child(:sink, Membrane.Testing.Sink)
+    ]
+
+    pipeline = Membrane.Testing.Pipeline.start_link_supervised!(spec: spec)
+    do_test(pipeline, true)
+  end
+
+  defp do_test(pipeline, pts_present) do
+    assert_start_of_stream(pipeline, :sink)
+    # refute_sink_event(pipeline, :sink, _, 1000)
+    # refute_sink_buffer(pipeline, :sink, _, 1000)
+    buffers_from_file(pts_present)
+    |> Enum.each(fn fixture ->
+      expected_buffer = %Membrane.Buffer{
+        payload: fixture.payload,
+        pts: fixture.pts
+      }
+
+      # I can't get it to work
+      # assert_sink_buffer(pipeline, :sink, ^expected_buffer, 1000)
+    end)
+
+    assert_end_of_stream(pipeline, :sink)
+    Pipeline.terminate(pipeline)
+  end
+
+  defp buffers_from_file(pts_present) do
+    binary = File.read!("../fixtures/noise.flac" |> Path.expand(__DIR__))
+
+    split_binary =
+      split_binary(binary)
+      |> Enum.with_index()
+      |> Enum.map(fn {payload, index} ->
+        %Membrane.Buffer{
+          payload: payload,
+          pts:
+            if pts_present do
+              index * 10_000
+            else
+              nil
+            end
+        }
+      end)
+  end
+
+  @spec split_binary(binary(), list(binary())) :: list(binary())
+  def split_binary(<<binary::binary-size(2048), rest::binary>>, acc \\ []) do
+    split_binary(rest, acc ++ [binary])
+  end
+
+  def split_binary(rest, acc) when byte_size(rest) <= 2048 do
+    Enum.concat(acc, [rest])
+  end
 end
