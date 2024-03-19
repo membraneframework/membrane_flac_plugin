@@ -47,7 +47,7 @@ defmodule Membrane.FLAC.Parser do
     {[], state}
   end
 
-  defp calculate_pts(buffer, state) do
+  defp set_buffer_pts(buffer, state) do
     if state.generate_best_effort_timestamps? do
       pts =
         case buffer.metadata do
@@ -57,6 +57,7 @@ defmodule Membrane.FLAC.Parser do
           _no_metadata ->
             0
         end
+
       %Buffer{buffer | pts: pts}
     else
       %Buffer{buffer | pts: state.input_pts}
@@ -77,10 +78,9 @@ defmodule Membrane.FLAC.Parser do
           |> Enum.map(fn
             %FLAC{} = format ->
               {:stream_format, {:output, format}}
+
             %Buffer{} = buf ->
-              out_buf = calculate_pts(buf, %{state | input_pts: input_pts})
-              # IO.inspect(out_buf.pts, label: "out_pts")
-              {:buffer, {:output, out_buf}}
+              {:buffer, {:output, set_buffer_pts(buf, %{state | input_pts: input_pts})}}
           end)
 
         {actions, %{state | parser: parser, input_pts: input_pts}}
@@ -93,9 +93,9 @@ defmodule Membrane.FLAC.Parser do
   @impl true
   def handle_end_of_stream(:input, _ctx, state) do
     {:ok, buffer} = Engine.flush(state.parser)
-    out_buf = calculate_pts(buffer, state)
+
     actions = [
-      buffer: {:output, out_buf},
+      buffer: {:output, set_buffer_pts(buffer, state)},
       end_of_stream: :output,
       notify_parent: {:end_of_stream, :input}
     ]
