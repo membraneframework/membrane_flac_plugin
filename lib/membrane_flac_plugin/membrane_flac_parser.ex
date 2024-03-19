@@ -54,13 +54,12 @@ defmodule Membrane.FLAC.Parser do
           %{sample_rate: sample_rate, starting_sample_number: starting_sample_number} ->
             (starting_sample_number / sample_rate * 1_000_000_000) |> trunc()
 
-          _credo_silencer ->
-            nil
+          _no_metadata ->
+            0
         end
-
-      Map.merge(buffer, %{pts: pts})
+      %Buffer{buffer | pts: pts}
     else
-      Map.merge(buffer, %{pts: state.input_pts})
+      %Buffer{buffer | pts: state.input_pts}
     end
   end
 
@@ -80,7 +79,7 @@ defmodule Membrane.FLAC.Parser do
               {:stream_format, {:output, format}}
             %Buffer{} = buf ->
               out_buf = calculate_pts(buf, %{state | input_pts: input_pts})
-              IO.inspect(out_buf.pts, label: "out_pts")
+              # IO.inspect(out_buf.pts, label: "out_pts")
               {:buffer, {:output, out_buf}}
           end)
 
@@ -95,7 +94,6 @@ defmodule Membrane.FLAC.Parser do
   def handle_end_of_stream(:input, _ctx, state) do
     {:ok, buffer} = Engine.flush(state.parser)
     out_buf = calculate_pts(buffer, state)
-    IO.inspect(out_buf.pts, label: "eos_pts")
     actions = [
       buffer: {:output, out_buf},
       end_of_stream: :output,
