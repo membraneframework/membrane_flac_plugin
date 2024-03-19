@@ -124,20 +124,29 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
     do_test(pipeline, true)
   end
 
-  defp do_test(pipeline, _pts_present) do
+  defp do_test(pipeline, pts_present) do
     assert_start_of_stream(pipeline, :sink)
-    # refute_sink_event(pipeline, :sink, _, 1000)
-    # refute_sink_buffer(pipeline, :sink, _, 1000)
-    # buffers_from_file(pts_present)
-    # |> Enum.each(fn fixture ->
-    #   expected_buffer = %Membrane.Buffer{
-    #     payload: fixture.payload,
-    #     pts: fixture.pts
-    #   }
-
-    # I can't get it to work
-    # assert_sink_buffer(pipeline, :sink, ^expected_buffer, 1000)
-    # end)
+    # assert_sink_stream_format(pipeline, :sink, %Membrane.FLAC{
+    #   min_block_size: 1152,
+    #   max_block_size: 1152,
+    #   min_frame_size: 1766,
+    #   max_frame_size: 2272,
+    #   total_samples: 32000,
+    #   md5_signature: <<122, 24, 145, 1, 73, 205, 50, 241, 87, 157, 176, 17, 61, 130,
+    #     183, 13>>,
+    #   sample_rate: 16000,
+    #   channels: 1,
+    #   sample_size: 16
+    # })
+    buffers_from_file(pts_present)
+    |> Enum.with_index()
+    |> Enum.each(fn {fixture, index} ->
+      ex_pts = fixture.pts
+      if index > 3 and ex_pts < 34_0000 do
+        IO.inspect(fixture.pts, label: "expected_pts")
+        assert_sink_buffer(pipeline, :sink, %Membrane.Buffer{pts: ex_pts}, 500)
+      end
+    end)
 
     assert_end_of_stream(pipeline, :sink)
     Pipeline.terminate(pipeline)
@@ -153,7 +162,11 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
         payload: payload,
         pts:
           if pts_present do
-            index * 10_000
+            if index < 4 do # first 3 buffers look like some other data than actual audio
+              0
+            else
+              index * 10_000
+            end
           else
             nil
           end

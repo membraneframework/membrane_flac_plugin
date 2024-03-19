@@ -78,9 +78,10 @@ defmodule Membrane.FLAC.Parser do
           |> Enum.map(fn
             %FLAC{} = format ->
               {:stream_format, {:output, format}}
-
             %Buffer{} = buf ->
-              {:buffer, {:output, calculate_pts(buf, %{state | input_pts: input_pts})}}
+              out_buf = calculate_pts(buf, %{state | input_pts: input_pts})
+              IO.inspect(out_buf.pts, label: "out_pts")
+              {:buffer, {:output, out_buf}}
           end)
 
         {actions, %{state | parser: parser, input_pts: input_pts}}
@@ -93,9 +94,10 @@ defmodule Membrane.FLAC.Parser do
   @impl true
   def handle_end_of_stream(:input, _ctx, state) do
     {:ok, buffer} = Engine.flush(state.parser)
-
+    out_buf = calculate_pts(buffer, state)
+    IO.inspect(out_buf.pts, label: "eos_pts")
     actions = [
-      buffer: {:output, calculate_pts(buffer, state)},
+      buffer: {:output, out_buf},
       end_of_stream: :output,
       notify_parent: {:end_of_stream, :input}
     ]
