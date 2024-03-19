@@ -129,8 +129,7 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
     binary = File.read!("../fixtures/noise.flac" |> Path.expand(__DIR__))
 
     split_binary(binary)
-    |> Enum.with_index()
-    |> Enum.map(fn {payload, index} ->
+    |> Enum.map(fn payload ->
       %Membrane.Buffer{
         payload: payload,
         pts: nil

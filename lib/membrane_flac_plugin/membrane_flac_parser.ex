@@ -47,23 +47,6 @@ defmodule Membrane.FLAC.Parser do
     {[], state}
   end
 
-  defp set_buffer_pts(buffer, state) do
-    if state.generate_best_effort_timestamps? do
-      pts =
-        case buffer.metadata do
-          %{sample_rate: sample_rate, starting_sample_number: starting_sample_number} ->
-            (starting_sample_number / sample_rate * 1_000_000_000) |> trunc()
-
-          _no_metadata ->
-            0
-        end
-
-      %Buffer{buffer | pts: pts}
-    else
-      %Buffer{buffer | pts: state.input_pts}
-    end
-  end
-
   @impl true
   def handle_buffer(
         :input,
@@ -71,6 +54,8 @@ defmodule Membrane.FLAC.Parser do
         _ctx,
         %{parser: parser} = state
       ) do
+    state = %{state | input_pts: input_pts}
+
     case Engine.parse(payload, parser) do
       {:ok, results, parser} ->
         actions =
@@ -80,10 +65,10 @@ defmodule Membrane.FLAC.Parser do
               {:stream_format, {:output, format}}
 
             %Buffer{} = buf ->
-              {:buffer, {:output, set_buffer_pts(buf, %{state | input_pts: input_pts})}}
+              {:buffer, {:output, set_buffer_pts(buf, state)}}
           end)
 
-        {actions, %{state | parser: parser, input_pts: input_pts}}
+        {actions, %{state | parser: parser}}
 
       {:error, reason} ->
         raise "Parsing error: #{inspect(reason)}"
@@ -101,5 +86,22 @@ defmodule Membrane.FLAC.Parser do
     ]
 
     {actions, state}
+  end
+
+  defp set_buffer_pts(buffer, state) do
+    if state.generate_best_effort_timestamps? do
+      pts =
+        case buffer.metadata do
+          %{sample_rate: sample_rate, starting_sample_number: starting_sample_number} ->
+            (starting_sample_number / sample_rate * 1_000_000_000) |> trunc()
+
+          _no_metadata ->
+            0
+        end
+
+      %Buffer{buffer | pts: pts}
+    else
+      %Buffer{buffer | pts: state.input_pts}
+    end
   end
 end
