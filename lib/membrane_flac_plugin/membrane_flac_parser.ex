@@ -6,7 +6,7 @@ defmodule Membrane.FLAC.Parser do
   """
   use Membrane.Filter
 
-  alias Membrane.{Buffer, FLAC}
+  alias Membrane.{Buffer, FLAC, Time}
   alias Membrane.FLAC.Parser.Engine
 
   def_output_pad :output, accepted_format: FLAC
@@ -93,7 +93,7 @@ defmodule Membrane.FLAC.Parser do
       pts =
         case buffer.metadata do
           %{sample_rate: sample_rate, starting_sample_number: starting_sample_number} ->
-            (starting_sample_number / sample_rate * 1_000_000_000) |> trunc()
+            (starting_sample_number / sample_rate * 1_000_000_000) |> trunc() |> Time.nanoseconds()
 
           _no_metadata ->
             0
