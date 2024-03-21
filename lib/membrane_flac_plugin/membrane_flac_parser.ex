@@ -88,12 +88,14 @@ defmodule Membrane.FLAC.Parser do
     {actions, state}
   end
 
+  # set_buffer_pts() does not take into account changing sample rate during stream, because parser engine doesn't support it.
+  # If you add support for it in parser engine, this function also need to be updated.
   defp set_buffer_pts(buffer, state) do
     if state.generate_best_effort_timestamps? do
       pts =
         case buffer.metadata do
           %{sample_rate: sample_rate, starting_sample_number: starting_sample_number} ->
-            (starting_sample_number / sample_rate * 1_000_000_000) |> trunc() |> Time.nanoseconds()
+            Ratio.new(starting_sample_number, sample_rate) |> Time.seconds()
 
           _no_metadata ->
             0

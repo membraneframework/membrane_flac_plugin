@@ -126,7 +126,7 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
   end
 
   defp buffers_from_file() do
-    binary = File.read!("../fixtures/noise.flac" |> Path.expand(__DIR__))
+    binary = "../fixtures/noise.flac" |> Path.expand(__DIR__) |> File.read!()
 
     split_binary(binary)
     |> Enum.map(fn payload ->
@@ -141,10 +141,10 @@ defmodule Membrane.FLAC.Parser.IntegrationTest do
   def split_binary(binary, acc \\ [])
 
   def split_binary(<<binary::binary-size(2048), rest::binary>>, acc) do
-    split_binary(rest, acc ++ [binary])
+    split_binary(rest, [binary] ++ acc)
   end
 
   def split_binary(rest, acc) when byte_size(rest) <= 2048 do
-    Enum.concat(acc, [rest])
+    Enum.reverse(acc) ++ [rest]
   end
 end
