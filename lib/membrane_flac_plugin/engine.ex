@@ -338,7 +338,7 @@ defmodule Membrane.FLAC.Parser.Engine do
         case {blocking_strategy, state.format} do
           {@blocking_stg_fixed, nil} -> number * block_size
           {@blocking_stg_fixed, format} -> number * format.min_block_size
-          {@blocking_stg_variable, _} -> number
+          {@blocking_stg_variable, _format} -> number
         end
 
       sample_size =
