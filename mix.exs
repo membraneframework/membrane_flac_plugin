@@ -1,7 +1,7 @@
 defmodule Membrane.FLAC.Plugin.MixProject do
   use Mix.Project
 
-  @version "0.12.0"
+  @version "0.12.1"
   @github_url "https://github.com/membraneframework/membrane_flac_plugin"
 
   def project do
@@ -11,14 +11,15 @@ defmodule Membrane.FLAC.Plugin.MixProject do
       elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
-      description: "Plugin for parsing FLAC encoded audio stream",
+      description: "Parses FLAC streams and extracts metadata.",
       package: package(),
       name: "Membrane FLAC plugin",
       source_url: @github_url,
       docs: docs(),
       homepage_url: "https://membraneframework.org",
       deps: deps(),
-      dialyzer: dialyzer()
+      dialyzer: dialyzer(),
+      aliases: [docs: ["docs", &prepend_llms_links/1]]
     ]
   end
 
@@ -35,7 +36,6 @@ defmodule Membrane.FLAC.Plugin.MixProject do
     [
       main: "readme",
       extras: ["README.md", "LICENSE"],
-      formatters: ["html"],
       source_ref: "v#{@version}",
       nest_modules_by_prefix: [Membrane.FLAC.Parser],
       before_closing_head_tag: &sidebar_fix/1
@@ -68,7 +68,7 @@ defmodule Membrane.FLAC.Plugin.MixProject do
       {:membrane_core, "~> 1.0"},
       {:membrane_flac_format, "~> 0.2.0"},
       {:crc, "~> 0.10.4"},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
       {:membrane_file_plugin, "~> 0.16.0", only: :test}
@@ -85,6 +85,28 @@ defmodule Membrane.FLAC.Plugin.MixProject do
       [plt_local_path: "priv/plts", plt_core_path: "priv/plts"] ++ opts
     else
       opts
+    end
+  end
+
+  defp prepend_llms_links(_) do
+    output_dir = docs()[:output] || "doc"
+    path = Path.join(output_dir, "llms.txt")
+
+    if File.exists?(path) do
+      existing = File.read!(path)
+
+      footer = """
+
+
+      ## See Also
+
+      - [Membrane Framework AI Skill](https://hexdocs.pm/membrane_core/skill.md)
+      - [Membrane Core](https://hexdocs.pm/membrane_core/llms.txt)
+      """
+
+      File.write!(path, String.trim_trailing(existing) <> footer)
+    else
+      IO.warn("#{path} not found — llms.txt was not generated, check your ex_doc configuration")
     end
   end
 end
