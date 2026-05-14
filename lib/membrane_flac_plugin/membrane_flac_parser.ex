@@ -186,7 +186,7 @@ defmodule Membrane.FLAC.Parser do
          buffer.metadata
 
        pts = Ratio.new(starting_sample_number, sample_rate) |> Time.seconds()
-       {:buffer, {:output, %Buffer{buffer | pts: pts}}}
+       {:buffer, {:output, %{buffer | pts: pts}}}
      end), state}
   end
 
@@ -203,7 +203,7 @@ defmodule Membrane.FLAC.Parser do
 
           %{
             current_pts: current_pts + duration,
-            buffers: buffers ++ [{:buffer, {:output, %Buffer{buffer | pts: current_pts}}}],
+            buffers: buffers ++ [{:buffer, {:output, %{buffer | pts: current_pts}}}],
             frame_duration: duration
           }
         end
