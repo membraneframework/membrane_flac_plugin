@@ -68,7 +68,7 @@ defmodule Membrane.FLAC.Plugin.MixProject do
       {:membrane_core, "~> 1.0"},
       {:membrane_flac_format, "~> 0.2.0"},
       {:crc, "~> 0.10.4"},
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
+      {:ex_doc, ">= 0.40.0", only: :dev, runtime: false},
       {:credo, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, ">= 0.0.0", only: :dev, runtime: false},
       {:membrane_file_plugin, "~> 0.16.0", only: :test}
