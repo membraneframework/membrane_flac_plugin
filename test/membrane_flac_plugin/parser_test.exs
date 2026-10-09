@@ -17,7 +17,7 @@ defmodule Membrane.FLAC.Parser.EngineTest do
   end
 
   test "parse chunked noise.flac" do
-    chunks = File.stream!(fixture("noise.flac"), [], 1) |> Enum.to_list()
+    chunks = File.stream!(fixture("noise.flac"), 1) |> Enum.to_list()
     data = File.read!(fixture("noise.flac"))
 
     {format_n_bufs, state} =
