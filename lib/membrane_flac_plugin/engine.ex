@@ -261,7 +261,7 @@ defmodule Membrane.FLAC.Parser.Engine do
 
     matches
     |> Enum.find_value(:nomatch, fn {pos, _len} ->
-      <<frame::binary-size(pos), next_frame_candidate::binary>> = data
+      <<frame::binary-size(^pos), next_frame_candidate::binary>> = data
 
       case parse_frame_header(next_frame_candidate, state) do
         :nodata -> :nodata
@@ -332,7 +332,7 @@ defmodule Membrane.FLAC.Parser.Engine do
          {:ok, sample_rate, rest} <- decode_sample_rate(sample_rate, rest, state),
          header_size = byte_size(data) - byte_size(rest),
          <<crc8::8, _rest::binary>> <- if(rest == <<>>, do: :nodata, else: rest),
-         <<header::binary-size(header_size), _body::binary>> = data,
+         <<header::binary-size(^header_size), _body::binary>> = data,
          :ok <- verify_crc(header, crc8) do
       sample_number =
         case {blocking_strategy, state.format} do
@@ -520,7 +520,7 @@ defmodule Membrane.FLAC.Parser.Engine do
 
   defp decode_utf8_num_tail(rest, acc, 0) do
     size = bit_size(acc)
-    <<num::size(size)>> = acc
+    <<num::size(^size)>> = acc
     {:ok, num, rest}
   end
 
